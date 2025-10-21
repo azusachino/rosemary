@@ -1,9 +1,5 @@
-[tools]
-rust = "stable"
-java = "zulu-21"
-
-"cargo:tauri-cli" = "2.0.0"
-"cargo:dioxus-cli" = "0.6.3"
+[env]
+'_'.file.path = ".env"
 
 [tasks.dev]
-run = """cargo tauri dev"""
+run = "cargo build"

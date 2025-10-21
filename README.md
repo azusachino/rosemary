@@ -2,17 +2,20 @@
 
 思い出、静かな力強さ
 
-## tools
+## overview
 
-```bash
-cargo install tauri-cli --version '^2.0.0' --locked
-cargo install dioxus-cli --locked
-```
-
-## todo
-
-- setup android tool chain
+1. introduction
+2. basic
+3. build async queues
+4. integrating networking into async queue
+5. coroutines
+6. reactive programming
+7. customizing tokio
+8. the actor model
+9. design patterns
+10. build async server without dependencies
+11. testing
 
 ## references
 
-- https://tauri.app/start/prerequisites/#android
+- async rust
