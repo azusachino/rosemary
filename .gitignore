@@ -2,4 +2,4 @@
 target/
 
 # dev runtime
-data.txt
+*.txt
