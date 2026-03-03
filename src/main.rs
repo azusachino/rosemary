@@ -30,8 +30,10 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Ingest { topic, content: _ } => {
+        Commands::Ingest { topic, content } => {
             println!("Ingesting topic: {}...", topic);
+            let path = rosemary::kb::save_markdown(&topic, &content)?;
+            println!("Saved to: {:?}", path);
         }
         Commands::Recall { query } => {
             println!("Recalling: {}...", query);
