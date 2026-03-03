@@ -24,6 +24,9 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // initialize libSQL database
+    let _conn = rosemary::db::init_db().await?;
+
     let cli = Cli::parse();
 
     match cli.command {
