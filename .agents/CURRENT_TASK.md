@@ -1,0 +1,13 @@
+# Current Task: Rosemary Knowledge Base v0.1.0 Implementation Complete
+- Status: PR created (https://github.com/azusachino/rosemary/pull/1)
+- Completed: 
+  - Scaffolding & Dependencies
+  - Core CLI with Ingest/Recall
+  - libSQL schema & initialization
+  - Markdown ingestion with frontmatter
+  - LanceDB vector store initialization
+  - Codebase cleanup and dependency trimming
+- Next Steps:
+  - Merge the PR
+  - Implement actual vector embedding logic in `src/vector.rs` (currently mock/init only)
+  - Implement `recall` logic for semantic search
