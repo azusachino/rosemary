@@ -2,10 +2,4 @@
 rust = "latest"
 python = "3.14"
 uv = "latest"
-
-[tasks]
-build = "make build"
-test = "make test"
-fmt = "make fmt"
-lint = "make lint"
-init = "make init"
+ruff = "latest"

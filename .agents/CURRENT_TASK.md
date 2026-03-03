@@ -1,18 +1,24 @@
 ## Objective
-Transform Rosemary into a Personal Knowledge Base (v0.1.0) and initialize professional project infrastructure.
+Upgrade Rosemary to v0.2.0 — Multi-file Vector Knowledge Base.
 
 ## Status
 DONE
 
 ## Completed Steps
-- [x] Consolidate storage into a single libSQL database (Relations + Vectors).
-- [x] Implement keyword search and relationship tracking.
-- [x] Initialize project with mise, Makefile, .env, and Python 3.14 (uv).
-- [x] Refine quality checks to use ruff and pymarkdown (no Node dependency).
-- [x] Clean up async playground and trim dependencies.
+- [x] Update dependencies (LanceDB, FastEmbed, text-splitter).
+- [x] Implement EmbeddingProvider trait and FastEmbedProvider.
+- [x] Add paragraph-level Chunker module.
+- [x] Implement LanceDB VectorStore for semantic recall.
+- [x] Upgrade libSQL schema (v2) with FTS5 and entity/relation support.
+- [x] Build ingest pipeline for files and directories.
+- [x] Implement hybrid recall (ANN + FTS5 re-ranking).
+- [x] Implement digest command for LLM-assisted session recording.
+- [x] Fix relate command with entity upsert safety.
+- [x] Implement compact command for session pruning and cluster detection.
+- [x] Wire all components into main.rs.
 
 ## Next Action
-Merge the PR and start using the knowledge base.
+Start using the new vector-backed knowledge base for agent conversations.
 
 ## Last Updated
 2026-03-03

@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 pub fn save_markdown(topic: &str, content: &str) -> Result<PathBuf> {
     let slug = slugify(topic);
-    let kb_root = env::var("KB_ROOT").unwrap_or_else(|_| "kb/topics".to_string());
-    let dir = PathBuf::from(kb_root);
+    let kb_root = env::var("KB_ROOT").unwrap_or_else(|_| "kb".to_string());
+    let dir = PathBuf::from(kb_root).join("topics");
     fs::create_dir_all(&dir)?;
 
     let file_path = dir.join(format!("{}.md", slug));
