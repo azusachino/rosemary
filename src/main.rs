@@ -2,7 +2,6 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("hello rosemary");
-
+    println!("rosemary knowledge base v0.1.0 ready");
     Ok(())
 }
