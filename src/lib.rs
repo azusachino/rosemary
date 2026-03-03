@@ -2,5 +2,6 @@
 
 pub mod db;
 pub mod kb;
+pub mod vector;
 
 pub use anyhow::{Result, anyhow, bail};
