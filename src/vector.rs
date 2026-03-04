@@ -77,7 +77,7 @@ impl VectorStore {
         ])
     }
 
-    pub async fn insert_chunks(&self, chunks: Vec<Chunk>) -> Result<()> {
+    pub async fn insert_chunks(&self, chunks: &[Chunk]) -> Result<()> {
         if chunks.is_empty() { return Ok(()); }
         let dim = self.dim;
         let schema = Arc::new(Self::schema(dim));
@@ -92,7 +92,7 @@ impl VectorStore {
             arrow_array::builder::Float32Builder::new(),
             dim as i32,
         );
-        for c in &chunks {
+        for c in chunks {
             vec_builder.values().append_slice(&c.vector);
             vec_builder.append(true);
         }
@@ -184,7 +184,7 @@ mod tests {
 
         let dim = 4;
         let chunks: Vec<Chunk> = (0..5).map(|i| make_chunk(i, dim)).collect();
-        store.insert_chunks(chunks).await.unwrap();
+        store.insert_chunks(&chunks).await.unwrap();
 
         let query = vec![0.0f32; dim];
         let results = store.search(&query, 3).await.unwrap();
@@ -196,7 +196,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let store = VectorStore::new_with_dim(dir.path().to_str().unwrap(), 4).await.unwrap();
         let dim = 4;
-        store.insert_chunks(vec![make_chunk(0, dim)]).await.unwrap();
+        store.insert_chunks(&[make_chunk(0, dim)]).await.unwrap();
         store.delete_by_topic("topic-1").await.unwrap();
         let results = store.search(&vec![0.0f32; dim], 10).await.unwrap();
         assert_eq!(results.len(), 0);

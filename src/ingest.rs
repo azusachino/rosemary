@@ -68,7 +68,7 @@ pub async fn ingest_file(
         })
         .collect();
 
-    store.insert_chunks(chunks).await?;
+    store.insert_chunks(&chunks).await?;
     upsert_topic(conn, &slug, &title, &file_path, &body).await?;
     Ok(())
 }
@@ -122,7 +122,6 @@ fn parse_frontmatter(raw: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::init_db;
     use crate::vector::VectorStore;
     use async_trait::async_trait;
     use std::io::Write;
@@ -140,14 +139,14 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_single_file() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test.db");
-        unsafe { std::env::set_var("DATABASE_URL", db_path.to_str().unwrap()); }
-
         let mut f = std::fs::File::create(dir.path().join("rust-pinning.md")).unwrap();
-        writeln!(f, "---\ntitle: Rust Pinning\nslug: rust-pinning\n---\n\nPinning is a mechanism...").unwrap();
+        writeln!(f, "---\ntitle: Rust Pinning\nslug: rust-pinning\n---\n\nPinning is a mechanism to prevent moves.").unwrap();
 
-        let (_db, conn) = init_db().await.unwrap();
+        let conn = libsql::Builder::new_local(":memory:").build().await.unwrap().connect().unwrap();
+        crate::db::init_db_on_conn(&conn).await.unwrap();
+
         let store = VectorStore::new_with_dim(dir.path().join("lance").to_str().unwrap(), 4).await.unwrap();
+
         let embedder = FakeEmbedder(4);
 
         ingest_file(dir.path().join("rust-pinning.md").as_path(), &conn, &store, &embedder)
@@ -161,15 +160,14 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_dir_counts_files() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test2.db");
-        unsafe { std::env::set_var("DATABASE_URL", db_path.to_str().unwrap()); }
-
         for name in &["a.md", "b.md", "c.md"] {
             let mut f = std::fs::File::create(dir.path().join(name)).unwrap();
             writeln!(f, "---\ntitle: {name}\nslug: {name}\n---\n\nContent of {name}.").unwrap();
         }
 
-        let (_db, conn) = init_db().await.unwrap();
+        let conn = libsql::Builder::new_local(":memory:").build().await.unwrap().connect().unwrap();
+        crate::db::init_db_on_conn(&conn).await.unwrap();
+
         let store = VectorStore::new_with_dim(dir.path().join("lance2").to_str().unwrap(), 4).await.unwrap();
         let embedder = FakeEmbedder(4);
 

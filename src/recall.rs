@@ -90,7 +90,7 @@ pub async fn recall(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::init_db, ingest::ingest_file, vector::VectorStore};
+    use crate::{ingest::ingest_file, vector::VectorStore};
     use async_trait::async_trait;
     use std::io::Write;
     use tempfile::tempdir;
@@ -110,13 +110,12 @@ mod tests {
     #[tokio::test]
     async fn test_recall_returns_relevant_topic() {
         let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test.db");
-        unsafe { std::env::set_var("DATABASE_URL", db_path.to_str().unwrap()); }
-
         let mut f = std::fs::File::create(dir.path().join("rust-pinning.md")).unwrap();
         writeln!(f, "---\ntitle: Rust Pinning\nslug: rust-pinning\n---\n\nPinning is a mechanism to prevent moves.").unwrap();
 
-        let (_db, conn) = init_db().await.unwrap();
+        let conn = libsql::Builder::new_local(":memory:").build().await.unwrap().connect().unwrap();
+        crate::db::init_db_on_conn(&conn).await.unwrap();
+
         let store = VectorStore::new_with_dim(dir.path().join("lance").to_str().unwrap(), 4).await.unwrap();
         let embedder = FakeEmbedder(4);
 

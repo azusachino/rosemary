@@ -6,7 +6,11 @@ pub async fn init_db() -> Result<(Database, Connection)> {
     let db_path = env::var("DATABASE_URL").unwrap_or_else(|_| "rosemary.db".to_string());
     let db = Builder::new_local(&db_path).build().await?;
     let conn = db.connect()?;
+    init_db_on_conn(&conn).await?;
+    Ok((db, conn))
+}
 
+pub async fn init_db_on_conn(conn: &Connection) -> Result<()> {
     conn.execute("PRAGMA foreign_keys = ON", ()).await?;
 
     conn.execute(
@@ -80,7 +84,7 @@ pub async fn init_db() -> Result<(Database, Connection)> {
         (),
     ).await?;
 
-    Ok((db, conn))
+    Ok(())
 }
 
 /// FTS5 keyword search — returns (id, title, file_path, bm25_score)
@@ -167,10 +171,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_creates_all_tables() {
-        let dir = tempdir().unwrap();
-        let db_path = dir.path().join("test.db");
-        unsafe { std::env::set_var("DATABASE_URL", db_path.to_str().unwrap()); }
-        let (_db, conn) = init_db().await.unwrap();
+        // Use :memory: for pure isolation in tests
+        let conn = Builder::new_local(":memory:").build().await.unwrap().connect().unwrap();
+        // Manually run init logic since we can't easily override env for a single parallel test
+        crate::db::init_db_on_conn(&conn).await.unwrap();
 
         // FTS5 table should exist
         let mut rows = conn
