@@ -1,9 +1,13 @@
-//! async rust in practice
+//! Rosemary Personal Knowledge Base v0.2.0
 
-// module declaration
-pub mod queue;
-mod tests;
+pub mod db;
+pub mod kb;
+pub mod embed;
+pub mod chunk;
+pub mod vector;
+pub mod ingest;
+pub mod recall;
+pub mod digest;
+pub mod compact;
 
-// usage declaration
-pub use anyhow::{Result, anyhow, bail};
-pub use tokio::task::{JoinHandle};
+pub use anyhow::{anyhow, bail, Result};
