@@ -1,5 +1,8 @@
 # rust
 target/
+.agents/CURRENT_TASK.md
+.agents/MEMORY.md
+.claude/settings.local.json
 
 # dev runtime
 *.txt

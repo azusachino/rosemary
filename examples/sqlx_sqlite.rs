@@ -53,7 +53,10 @@ async fn main() -> Result<()> {
         .fetch_one(&pool)
         .await?;
 
-    info!("Queried user: {:?}", user);
+    info!(
+        "Queried user: id={}, name={}, email={}",
+        user.id, user.name, user.email
+    );
 
     Ok(())
 }
