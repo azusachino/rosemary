@@ -72,7 +72,8 @@ impl Default for CounterHandle {
 
 impl CounterHandle {
     /// Sends an increment command to the actor.
-    pub async fn increment(&self) -> anyhow::Result<()> {        self.sender
+    pub async fn increment(&self) -> anyhow::Result<()> {
+        self.sender
             .send(CounterCommand::Increment)
             .await
             .map_err(|e| anyhow::anyhow!("failed to send increment command: {}", e))
