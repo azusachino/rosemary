@@ -14,6 +14,14 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1"
 
+# Observability (from async-masterclass)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+tokio-util = { version = "0.7", features = ["full"] }
+futures-util = "0.3"
+
 # CLI & KB
 clap = { version = "4.5", features = ["derive"] }
 slug = "0.1"
@@ -39,6 +47,17 @@ libsql = "0.6"
 tiktoken-rs = "0.9.1"
 ratatui = "0.30.0"
 crossterm = "0.29.0"
+
+# Async Utilities (from async-masterclass)
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros"] }
+tonic = "0.12"
+prost = "0.13"
+async-task = "4.7"
+futures-lite = "2.6"
+flume = "0.11"
+
+[build-dependencies]
+tonic-build = "0.12"
 
 [dev-dependencies]
 tempfile = "3"

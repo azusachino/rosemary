@@ -1,41 +1,50 @@
-# AGENTS
+# Rosemary
 
 ## Project Overview
 
-Personal Knowledge Base CLI with hybrid Markdown/libSQL storage. Rosemary acts as a reactive memory for users and agents to store, relate, and recall technical concepts during conversations.
+Rosemary is a dual-purpose project:
+1. **Personal Knowledge Base (PKM) CLI**: A high-performance, agent-assisted reactive memory for storing and recalling technical concepts using hybrid semantic/keyword search.
+2. **Async Rust Masterclass**: A learning ground for advanced async patterns, networking, observability, and concurrency.
 
 ## Tech Stack & Architecture
 
 - **Language:** Rust (Edition 2024), Python 3.14 (Scripts)
-- **Database:** libSQL (SQLite3 protocol) for structured relations and vector gists
-- **Storage:** Local Markdown files (`kb/topics/`) for durable content
+- **Database:** libSQL (PKM metadata/vectors) and sqlx/sqlite (Async learning)
+- **Vectors:** LanceDB + FastEmbed (all-MiniLM-L6-v2)
+- **Async Runtime:** `tokio` (full), `async-task`, `futures-lite`
+- **Observability:** `tracing`, `metrics-exporter-prometheus`
+- **Channels:** `flume` (MPMC)
 - **CLI:** `clap` for command parsing
-- **Task Management:** `mise` for tool management, `Makefile` for tasks, `uv` for Python environments
+- **Tooling:** Nix + Makefile (Primary), `mise` (Fallback), `uv` for Python environments
 
 ## Build, Run & Test
 
-- **Rust:** `cargo build`, `cargo run`, `cargo test`
-- **Python:** `uv run scripts/example.py`
-- **Tasks:** `make build`, `make test`, `make fmt`, `make lint`
+All operations are managed via `make`:
+
+- `make build`: Build the Rosemary binary.
+- `make fmt`: Format all code (Rust, Markdown, TOML, YAML).
+- `make lint`: Run `clippy` with pedantic checks.
+- `make test`: Run all tests.
+- `make check`: Run format check, lint, and tests (CI baseline).
+- `make run-examples EXAMPLE=name`: Run a specific async example from `examples/`.
 
 ## Coding Conventions
 
-- **Naming:** `snake_case` for functions, variables, and modules. `PascalCase` for types and traits.
+- **Naming:** `snake_case` for functions/variables, `PascalCase` for types and traits.
 - **Error Handling:** Use `anyhow::Result` for application-level errors and `thiserror` for library-level errors.
-- **Conventions:** Follow standard Rust idioms (clippy).
-- **Python:** Use `uv` for dependency management and Python 3.14.
+- **Async Patterns:** Prefer explicit composition and delegation over complex inheritance.
+- **Staging Discipline:** Stage specific files; never use `git add -A`.
 
 ## Key Files & Entry Points
 
 - `src/main.rs`: CLI entry point and command matching.
-- `src/db.rs`: libSQL schema and database initialization.
-- `src/kb.rs`: Markdown ingestion and file management.
-- `scripts/`: Python utility scripts.
-- `kb/topics/`: Source of truth Markdown files.
+- `src/lib.rs`: Module declarations and common utilities.
+- `src/db.rs`: libSQL schema and PKM database logic.
+- `src/tui.rs`: Interactive dashboard implementation.
+- `examples/`: Standalone async Rust samples.
 
 ## Quality Standards
 
-- `cargo fmt` must be run on all Rust code.
-- `cargo clippy` must pass with no warnings.
-- `cargo test` must pass.
+- No warnings in `clippy`.
+- All tests must pass.
 - Markdown files must follow basic formatting rules.
