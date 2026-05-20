@@ -182,6 +182,201 @@ pub async fn insert_relation(
     Ok(())
 }
 
+pub async fn mcp_create_entities(conn: &Connection, entities: Vec<crate::mcp::EntityInput>) -> Result<()> {
+    for ent in entities {
+        conn.execute(
+            "INSERT OR IGNORE INTO mcp_entities (name, entity_type) VALUES (?1, ?2)",
+            libsql::params![ent.name.clone(), ent.entity_type],
+        ).await?;
+        for obs in ent.observations {
+            conn.execute(
+                "INSERT INTO mcp_observations (id, entity_name, content) VALUES (?1, ?2, ?3)",
+                libsql::params![uuid::Uuid::new_v4().to_string(), ent.name.clone(), obs],
+            ).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn mcp_add_observations(conn: &Connection, observations: Vec<crate::mcp::ObservationInput>) -> Result<()> {
+    for obs_batch in observations {
+        for content in obs_batch.contents {
+            conn.execute(
+                "INSERT INTO mcp_observations (id, entity_name, content) VALUES (?1, ?2, ?3)",
+                libsql::params![uuid::Uuid::new_v4().to_string(), obs_batch.entity_name.clone(), content],
+            ).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn mcp_create_relations(conn: &Connection, relations: Vec<crate::mcp::RelationInput>) -> Result<()> {
+    for rel in relations {
+        conn.execute(
+            "INSERT OR REPLACE INTO mcp_relations (from_entity, to_entity, relation_type) VALUES (?1, ?2, ?3)",
+            libsql::params![rel.from, rel.to, rel.relation_type],
+        ).await?;
+    }
+    Ok(())
+}
+
+pub async fn mcp_delete_entities(conn: &Connection, names: Vec<String>) -> Result<()> {
+    for name in names {
+        conn.execute("DELETE FROM mcp_entities WHERE name = ?1", libsql::params![name]).await?;
+    }
+    Ok(())
+}
+
+pub async fn mcp_delete_observations(conn: &Connection, deletions: Vec<crate::mcp::ObservationDeletion>) -> Result<()> {
+    for del in deletions {
+        for obs in del.observations {
+            conn.execute(
+                "DELETE FROM mcp_observations WHERE entity_name = ?1 AND content = ?2",
+                libsql::params![del.entity_name.clone(), obs],
+            ).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn mcp_delete_relations(conn: &Connection, relations: Vec<crate::mcp::RelationInput>) -> Result<()> {
+    for rel in relations {
+        conn.execute(
+            "DELETE FROM mcp_relations WHERE from_entity = ?1 AND to_entity = ?2 AND relation_type = ?3",
+            libsql::params![rel.from, rel.to, rel.relation_type],
+        ).await?;
+    }
+    Ok(())
+}
+
+pub async fn mcp_read_graph(conn: &Connection) -> Result<crate::mcp::Graph> {
+    let mut entities = Vec::new();
+    let mut rows = conn.query("SELECT name, entity_type FROM mcp_entities", ()).await?;
+    while let Some(row) = rows.next().await? {
+        let name: String = row.get(0)?;
+        let entity_type: String = row.get(1)?;
+        
+        let mut obs_rows = conn.query("SELECT content FROM mcp_observations WHERE entity_name = ?1", libsql::params![name.clone()]).await?;
+        let mut observations = Vec::new();
+        while let Some(obs_row) = obs_rows.next().await? {
+            observations.push(obs_row.get(0)?);
+        }
+        
+        entities.push(crate::mcp::EntityOutput { name, entity_type, observations });
+    }
+
+    let mut relations = Vec::new();
+    let mut rel_rows = conn.query("SELECT from_entity, to_entity, relation_type FROM mcp_relations", ()).await?;
+    while let Some(row) = rel_rows.next().await? {
+        relations.push(crate::mcp::RelationInput {
+            from: row.get(0)?,
+            to: row.get(1)?,
+            relation_type: row.get(2)?,
+        });
+    }
+
+    Ok(crate::mcp::Graph { entities, relations })
+}
+
+pub async fn mcp_search_nodes(conn: &Connection, query: &str) -> Result<crate::mcp::Graph> {
+    // Basic search for now: matches entity name or observation content
+    let mut entities = Vec::new();
+    let sql = "SELECT DISTINCT e.name, e.entity_type 
+               FROM mcp_entities e
+               LEFT JOIN mcp_observations o ON e.name = o.entity_name
+               WHERE e.name LIKE ?1 OR e.entity_type LIKE ?1 OR o.content LIKE ?1";
+    let pattern = format!("%{}%", query);
+    let mut rows = conn.query(sql, libsql::params![pattern]).await?;
+    
+    let mut entity_names = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let name: String = row.get(0)?;
+        let entity_type: String = row.get(1)?;
+        entity_names.push(name.clone());
+        
+        let mut obs_rows = conn.query("SELECT content FROM mcp_observations WHERE entity_name = ?1", libsql::params![name.clone()]).await?;
+        let mut observations = Vec::new();
+        while let Some(obs_row) = obs_rows.next().await? {
+            observations.push(obs_row.get(0)?);
+        }
+        
+        entities.push(crate::mcp::EntityOutput { name, entity_type, observations });
+    }
+
+    let mut relations = Vec::new();
+    if !entity_names.is_empty() {
+        // Find relations between matching entities
+        let placeholders = entity_names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT from_entity, to_entity, relation_type FROM mcp_relations 
+             WHERE from_entity IN ({}) AND to_entity IN ({})",
+            placeholders, placeholders
+        );
+        
+        let mut params = Vec::new();
+        for name in &entity_names { params.push(libsql::Value::from(name.clone())); }
+        for name in &entity_names { params.push(libsql::Value::from(name.clone())); }
+        
+        let mut rel_rows = conn.query(&sql, params).await?;
+        while let Some(row) = rel_rows.next().await? {
+            relations.push(crate::mcp::RelationInput {
+                from: row.get(0)?,
+                to: row.get(1)?,
+                relation_type: row.get(2)?,
+            });
+        }
+    }
+
+    Ok(crate::mcp::Graph { entities, relations })
+}
+
+pub async fn mcp_open_nodes(conn: &Connection, names: Vec<String>) -> Result<crate::mcp::Graph> {
+    let mut entities = Vec::new();
+    for name in &names {
+        let mut rows = conn.query("SELECT entity_type FROM mcp_entities WHERE name = ?1", libsql::params![name.clone()]).await?;
+        if let Some(row) = rows.next().await? {
+            let entity_type: String = row.get(0)?;
+            
+            let mut obs_rows = conn.query("SELECT content FROM mcp_observations WHERE entity_name = ?1", libsql::params![name.clone()]).await?;
+            let mut observations = Vec::new();
+            while let Some(obs_row) = obs_rows.next().await? {
+                observations.push(obs_row.get(0)?);
+            }
+            
+            entities.push(crate::mcp::EntityOutput { 
+                name: name.clone(), 
+                entity_type, 
+                observations 
+            });
+        }
+    }
+
+    let mut relations = Vec::new();
+    if !names.is_empty() {
+        let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT from_entity, to_entity, relation_type FROM mcp_relations 
+             WHERE from_entity IN ({}) AND to_entity IN ({})",
+            placeholders, placeholders
+        );
+        
+        let mut params = Vec::new();
+        for name in &names { params.push(libsql::Value::from(name.clone())); }
+        for name in &names { params.push(libsql::Value::from(name.clone())); }
+        
+        let mut rel_rows = conn.query(&sql, params).await?;
+        while let Some(row) = rel_rows.next().await? {
+            relations.push(crate::mcp::RelationInput {
+                from: row.get(0)?,
+                to: row.get(1)?,
+                relation_type: row.get(2)?,
+            });
+        }
+    }
+
+    Ok(crate::mcp::Graph { entities, relations })
+}
+
 pub async fn get_related(
     conn: &Connection,
     entity_id: &str,
