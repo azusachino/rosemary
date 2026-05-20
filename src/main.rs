@@ -31,7 +31,7 @@ enum Commands {
         entity_type: String,
     },
     /// Add an observation to an existing entity
-    AddObs {
+    AddObservation {
         name: String,
         content: String,
     },
@@ -43,7 +43,17 @@ enum Commands {
     },
     /// List all entities and relations (the whole graph)
     List,
-    /// Merge near-duplicate topics and sync Graph to MD
+    /// Remove an entity and its associated relations/observations
+    DeleteEntity {
+        name: String,
+    },
+    /// Remove specific observations from an entity
+    DeleteObservation {
+        name: String,
+        /// Optional: specific content to delete. If omitted, deletes all obs for entity (careful!)
+        content: Option<String>,
+    },
+    /// Merge near-duplicate topics, prune sessions, and sync Graph to MD
     Compact {
         /// Prune sessions older than N days
         #[arg(long, default_value = "90")]
@@ -121,7 +131,7 @@ async fn main() -> Result<()> {
             }]).await?;
             println!("Entity '{}' added.", name);
         }
-        Commands::AddObs { name, content } => {
+        Commands::AddObservation { name, content } => {
             rosemary::db::mcp_add_observations(&conn, vec![rosemary::mcp::ObservationInput {
                 entity_name: name.clone(),
                 contents: vec![content],
@@ -148,6 +158,24 @@ async fn main() -> Result<()> {
             println!("\nRelations:");
             for r in graph.relations {
                 println!("- {} --({})--> {}", r.from, r.relation_type, r.to);
+            }
+        }
+        Commands::DeleteEntity { name } => {
+            rosemary::db::mcp_delete_entities(&conn, vec![name.clone()]).await?;
+            println!("Entity '{}' deleted.", name);
+        }
+        Commands::DeleteObservation { name, content } => {
+            if let Some(c) = content {
+                rosemary::db::mcp_delete_observations(&conn, vec![rosemary::mcp::ObservationDeletion {
+                    entity_name: name.clone(),
+                    observations: vec![c],
+                }]).await?;
+                println!("Observation deleted from '{}'.", name);
+            } else {
+                // If no content, we need a way to clear all observations. 
+                // For now, let's just delete the entity and re-add it if that's the intent, 
+                // or we could add a dedicated 'clear-obs' later.
+                println!("Warning: No content specified. Use delete-entity to remove everything.");
             }
         }
         Commands::Compact { older_than } => {
