@@ -29,6 +29,8 @@ enum Commands {
         /// Query string
         query: String,
     },
+    /// Interactive TUI browser
+    Browse,
     /// Relate two entities
     Relate {
         from: String,
@@ -125,20 +127,25 @@ async fn main() -> Result<()> {
         }
         Commands::Recall { query } => {
             println!("Searching: {}...", query);
-            let results = rosemary::recall::recall(
+            let data = rosemary::recall::recall_data(
                 &query, &conn, &store, embedder.as_ref(), 5
             ).await?;
+            let results = data.ranked(5);
+
             if results.is_empty() {
                 println!("No results found.");
             } else {
                 for r in results {
                     println!("\n# {} (score: {:.2})", r.title, r.score);
                     println!("Path: {}", r.file_path);
-                    if !r.snippet.is_empty() {
-                        println!("Snippet: {}...", &r.snippet.chars().take(120).collect::<String>());
+                    if !r.snippet.text.is_empty() {
+                        println!("Snippet: {}...", &r.snippet.text.chars().take(120).collect::<String>());
                     }
                 }
             }
+        }
+        Commands::Browse => {
+            rosemary::tui::run_tui(conn, store, embedder).await?;
         }
         Commands::Relate { from, to, relation } => {
             println!("Relating {} --({})--> {}...", from, relation, to);

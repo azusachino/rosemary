@@ -9,5 +9,6 @@ pub mod ingest;
 pub mod recall;
 pub mod digest;
 pub mod compact;
+pub mod tui;
 
 pub use anyhow::{anyhow, bail, Result};

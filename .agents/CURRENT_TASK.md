@@ -1,24 +1,21 @@
 ## Objective
-Upgrade Rosemary to v0.2.0 — Multi-file Vector Knowledge Base.
+Harden Rust understanding through systematic lessons and practical refactoring in Rosemary.
 
 ## Status
 DONE
 
 ## Completed Steps
-- [x] Update dependencies (LanceDB, FastEmbed, text-splitter).
-- [x] Implement EmbeddingProvider trait and FastEmbedProvider.
-- [x] Add paragraph-level Chunker module.
-- [x] Implement LanceDB VectorStore for semantic recall.
-- [x] Upgrade libSQL schema (v2) with FTS5 and entity/relation support.
-- [x] Build ingest pipeline for files and directories.
-- [x] Implement hybrid recall (ANN + FTS5 re-ranking).
-- [x] Implement digest command for LLM-assisted session recording.
-- [x] Fix relate command with entity upsert safety.
-- [x] Implement compact command for session pruning and cluster detection.
-- [x] Wire all components into main.rs.
+- [x] Analyze project architecture and initialize KB.
+- [x] Ingest existing design documents.
+- [x] Refactor `VectorStore` to use slice references (`&[Chunk]`).
+- [x] Fix test concurrency issues using in-memory databases and schema modularization.
+- [x] Create and ingest lessons on Memory Layout and Database Isolation.
+- [x] Implement the `Snippet<'a>` refactor in `src/recall.rs` to practice explicit lifetimes and eliminate unnecessary String clones.
+- [x] Update `main.rs` and tests to use the new zero-copy `RecallData` pattern.
+- [x] Build an interactive TUI dashboard using Ratatui and Crossterm (`rosemary browse`).
 
 ## Next Action
-Start using the new vector-backed knowledge base for agent conversations.
+Session complete. User to test `rosemary browse`.
 
 ## Last Updated
-2026-03-03
+2026-05-20
