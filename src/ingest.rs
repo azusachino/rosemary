@@ -23,9 +23,9 @@ pub async fn ingest_file(
     let (mut title, body) = parse_frontmatter(&raw);
 
     // Fallback to filename stem if title is still Untitled
-    if title == "Untitled" {
-        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-            title = stem.replace('-', " ").replace('_', " ");
+    if title == "Untitled"
+        && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            title = stem.replace(['-', '_'], " ");
             // capitalise words
             title = title.split_whitespace()
                 .map(|w| {
@@ -38,7 +38,6 @@ pub async fn ingest_file(
                 .collect::<Vec<_>>()
                 .join(" ");
         }
-    }
 
     let slug = slugify(&title);
     let file_path = path.to_str().unwrap_or_default().to_string();
@@ -92,8 +91,8 @@ pub async fn ingest_dir(
 /// Returns (title, body). Title comes from frontmatter `title:` if present,
 /// otherwise the filename stem.
 fn parse_frontmatter(raw: &str) -> (String, String) {
-    if let Some(rest) = raw.strip_prefix("---") {
-        if let Some(end) = rest.find("\n---") {
+    if let Some(rest) = raw.strip_prefix("---")
+        && let Some(end) = rest.find("\n---") {
             let fm = &rest[..end];
             let body = rest[end + 4..].trim_start_matches('\n').to_string();
             let title = fm.lines()
@@ -102,7 +101,6 @@ fn parse_frontmatter(raw: &str) -> (String, String) {
                 .unwrap_or_else(|| "Untitled".to_string());
             return (title, body);
         }
-    }
 
     // Try to find "title:" in the first few lines (legacy format)
     for line in raw.lines().take(5) {

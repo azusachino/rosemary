@@ -12,18 +12,22 @@ pub struct FastEmbedProvider {
 
 impl FastEmbedProvider {
     pub fn new() -> Result<Self> {
-        let model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-        )?;
-        Ok(Self { model: Mutex::new(model), dim: 384 })
+        let model = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))?;
+        Ok(Self {
+            model: Mutex::new(model),
+            dim: 384,
+        })
     }
 }
 
 #[async_trait]
 impl EmbeddingProvider for FastEmbedProvider {
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        let mut model = self.model.lock().map_err(|e| anyhow::anyhow!("mutex poisoned: {}", e))?;
-        let embeddings = model.embed(texts.to_vec(), None)?;
+        let mut model = self
+            .model
+            .lock()
+            .map_err(|e| anyhow::anyhow!("mutex poisoned: {}", e))?;
+        let embeddings = model.embed(texts, None)?;
         Ok(embeddings)
     }
 

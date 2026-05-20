@@ -39,8 +39,8 @@ created_at: {}
 pub async fn call_digest_llm(transcript: &str) -> Result<DigestOutput> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| anyhow::anyhow!("ANTHROPIC_API_KEY not set"))?;
-    let model = std::env::var("ROSEMARY_DIGEST_MODEL")
-        .unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
+    let model =
+        std::env::var("ROSEMARY_DIGEST_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
 
     let prompt = format!(
         r#"You are a knowledge base assistant. Given the following conversation transcript, extract:
@@ -84,7 +84,11 @@ Transcript:
         .ok_or_else(|| anyhow::anyhow!("unexpected API response shape"))?;
 
     // Strip markdown code fences if present
-    let text = text.trim().trim_start_matches("```json").trim_end_matches("```").trim();
+    let text = text
+        .trim()
+        .trim_start_matches("```json")
+        .trim_end_matches("```")
+        .trim();
     Ok(serde_json::from_str(text)?)
 }
 

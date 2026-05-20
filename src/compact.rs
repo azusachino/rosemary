@@ -1,10 +1,12 @@
 use anyhow::Result;
-use std::time::{Duration, SystemTime};
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 pub fn prune_old_sessions(kb_root: &str, days: u32) -> Result<usize> {
     let sessions_dir = PathBuf::from(kb_root).join("sessions");
-    if !sessions_dir.exists() { return Ok(0); }
+    if !sessions_dir.exists() {
+        return Ok(0);
+    }
 
     let cutoff = SystemTime::now() - Duration::from_secs(days as u64 * 86400);
     let mut pruned = 0;
@@ -42,7 +44,9 @@ pub async fn find_duplicate_clusters(
     let mut clustered: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for id in &topic_ids {
-        if clustered.contains(id) { continue; }
+        if clustered.contains(id) {
+            continue;
+        }
 
         // Fetch representative vector for this topic (first chunk)
         let table = store.db().open_table("chunks").execute().await?;
@@ -56,16 +60,24 @@ pub async fn find_duplicate_clusters(
         if let Some(batch) = results.next().await {
             let batch = batch?;
             if batch.num_rows() > 0 {
-                let vectors = batch.column_by_name("vector").unwrap()
-                    .as_any().downcast_ref::<arrow_array::FixedSizeListArray>().unwrap();
+                let vectors = batch
+                    .column_by_name("vector")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::FixedSizeListArray>()
+                    .unwrap();
                 let vector_val = vectors.value(0);
-                let vector_data = vector_val.as_any().downcast_ref::<arrow_array::Float32Array>().unwrap();
+                let vector_data = vector_val
+                    .as_any()
+                    .downcast_ref::<arrow_array::Float32Array>()
+                    .unwrap();
                 let vector: Vec<f32> = vector_data.values().to_vec();
 
                 let similar = store.search(&vector, 10).await?;
                 let mut cluster = vec![id.clone()];
                 for s in similar {
-                    if s.score >= threshold && s.topic_id != *id && !clustered.contains(&s.topic_id) {
+                    if s.score >= threshold && s.topic_id != *id && !clustered.contains(&s.topic_id)
+                    {
                         cluster.push(s.topic_id.clone());
                         clustered.insert(s.topic_id.clone());
                     }
@@ -95,11 +107,15 @@ mod tests {
 
         // Create a file with old mtime
         let old_path = sessions_dir.join("2020-01-01-0000.md");
-        std::fs::File::create(&old_path).unwrap().write_all(b"old").unwrap();
+        std::fs::File::create(&old_path)
+            .unwrap()
+            .write_all(b"old")
+            .unwrap();
 
         // Set mtime to 2020-01-01
         let old_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1577836800);
-        filetime::set_file_mtime(&old_path, filetime::FileTime::from_system_time(old_time)).unwrap();
+        filetime::set_file_mtime(&old_path, filetime::FileTime::from_system_time(old_time))
+            .unwrap();
 
         let count = prune_old_sessions(dir.path().to_str().unwrap(), 90).unwrap();
         assert_eq!(count, 1);

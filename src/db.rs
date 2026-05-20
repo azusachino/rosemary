@@ -19,7 +19,8 @@ pub async fn init_db() -> Result<(Database, Connection)> {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
         (),
-    ).await?;
+    )
+    .await?;
 
     // FTS5 for full-text keyword search
     conn.execute(
@@ -36,7 +37,8 @@ pub async fn init_db() -> Result<(Database, Connection)> {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
         (),
-    ).await?;
+    )
+    .await?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS entities (
@@ -45,7 +47,8 @@ pub async fn init_db() -> Result<(Database, Connection)> {
             entity_type TEXT
         )",
         (),
-    ).await?;
+    )
+    .await?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS relations (
@@ -57,7 +60,8 @@ pub async fn init_db() -> Result<(Database, Connection)> {
             FOREIGN KEY (to_id)   REFERENCES entities(id)
         )",
         (),
-    ).await?;
+    )
+    .await?;
 
     // Triggers to keep FTS5 in sync with topics
     conn.execute(
@@ -65,7 +69,8 @@ pub async fn init_db() -> Result<(Database, Connection)> {
             INSERT INTO topics_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
         END",
         (),
-    ).await?;
+    )
+    .await?;
     conn.execute(
         "CREATE TRIGGER IF NOT EXISTS topics_ad AFTER DELETE ON topics BEGIN
             INSERT INTO topics_fts(topics_fts, rowid, title, body) VALUES('delete', old.rowid, old.title, old.body);
@@ -95,7 +100,9 @@ pub async fn search_fts(
                WHERE topics_fts MATCH ?1
                ORDER BY score
                LIMIT ?2";
-    let mut rows = conn.query(sql, libsql::params![query, limit as i64]).await?;
+    let mut rows = conn
+        .query(sql, libsql::params![query, limit as i64])
+        .await?;
     let mut results = Vec::new();
     while let Some(row) = rows.next().await? {
         results.push((
@@ -123,28 +130,44 @@ pub async fn upsert_topic(
             body=excluded.body,
             updated_at=CURRENT_TIMESTAMP",
         libsql::params![id, title, file_path, body],
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
 
-pub async fn upsert_entity(conn: &Connection, id: &str, name: &str, entity_type: &str) -> Result<()> {
+pub async fn upsert_entity(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    entity_type: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO entities (id, name, entity_type) VALUES (?1, ?2, ?3)
          ON CONFLICT(id) DO UPDATE SET name=excluded.name, entity_type=excluded.entity_type",
         libsql::params![id, name, entity_type],
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
 
-pub async fn insert_relation(conn: &Connection, from_id: &str, to_id: &str, relation_type: &str) -> Result<()> {
+pub async fn insert_relation(
+    conn: &Connection,
+    from_id: &str,
+    to_id: &str,
+    relation_type: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO relations (from_id, to_id, relation_type) VALUES (?1, ?2, ?3)",
         libsql::params![from_id, to_id, relation_type],
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
 
-pub async fn get_related(conn: &Connection, entity_id: &str) -> Result<Vec<(String, String, String)>> {
+pub async fn get_related(
+    conn: &Connection,
+    entity_id: &str,
+) -> Result<Vec<(String, String, String)>> {
     let sql = "SELECT e.name, r.to_id, r.relation_type FROM relations r
                JOIN entities e ON e.id = r.to_id
                WHERE r.from_id = ?1
@@ -169,13 +192,16 @@ mod tests {
     async fn test_init_creates_all_tables() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
-        unsafe { std::env::set_var("DATABASE_URL", db_path.to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("DATABASE_URL", db_path.to_str().unwrap());
+        }
         let (_db, conn) = init_db().await.unwrap();
 
         // FTS5 table should exist
         let mut rows = conn
             .query("SELECT name FROM sqlite_master WHERE name='topics_fts'", ())
-            .await.unwrap();
+            .await
+            .unwrap();
         let row = rows.next().await.unwrap();
         assert!(row.is_some(), "topics_fts table missing");
     }
@@ -184,7 +210,9 @@ mod tests {
     async fn test_fts_search_finds_topic() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
-        unsafe { std::env::set_var("DATABASE_URL", db_path.to_str().unwrap()); }
+        unsafe {
+            std::env::set_var("DATABASE_URL", db_path.to_str().unwrap());
+        }
         let (_db, conn) = init_db().await.unwrap();
 
         conn.execute(

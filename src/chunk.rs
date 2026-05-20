@@ -34,7 +34,11 @@ mod tests {
         let para = "word ".repeat(200);
         let text = format!("{}\n\n{}\n\n{}", para, para, para);
         let chunks = chunk_text(&text, 256, 32);
-        assert!(chunks.len() >= 2, "expected multiple chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "expected multiple chunks, got {}",
+            chunks.len()
+        );
     }
 
     #[test]
@@ -49,8 +53,12 @@ mod tests {
         let para_b = "beta ".repeat(500);
         let text = format!("{}\n\n{}", para_a, para_b);
         let chunks = chunk_text(&text, 200, 50);
-        
-        assert!(chunks.len() >= 2, "expected multiple chunks, got {}", chunks.len());
+
+        assert!(
+            chunks.len() >= 2,
+            "expected multiple chunks, got {}",
+            chunks.len()
+        );
         // Verify that some "alpha" is in the second chunk OR some "beta" is in the first (depending on split point)
         // With text-splitter, overlap behavior might vary based on semantic boundaries.
         // We just want to ensure chunks aren't disjoint if they split.

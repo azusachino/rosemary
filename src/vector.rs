@@ -1,12 +1,10 @@
 use anyhow::Result;
 use arrow_array::builder::FixedSizeListBuilder;
-use arrow_array::{
-    Float32Array, RecordBatch, RecordBatchIterator, StringArray, UInt32Array,
-};
+use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray, UInt32Array};
 use arrow_schema::{DataType, Field, Schema};
 use futures::StreamExt;
-use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::connect;
+use lancedb::query::{ExecutableQuery, QueryBase};
 use std::sync::Arc;
 
 const TABLE: &str = "chunks";
@@ -44,7 +42,12 @@ impl VectorStore {
     pub async fn new_with_dim(path: &str, dim: usize) -> Result<Self> {
         let db = connect(path).execute().await?;
         // Create table if absent by inserting an empty batch
-        if !db.table_names().execute().await?.contains(&TABLE.to_string()) {
+        if !db
+            .table_names()
+            .execute()
+            .await?
+            .contains(&TABLE.to_string())
+        {
             let schema = Arc::new(Self::schema(dim));
             let batch = RecordBatch::new_empty(schema.clone());
             db.create_table(TABLE, RecordBatchIterator::new(vec![Ok(batch)], schema))
@@ -71,27 +74,36 @@ impl VectorStore {
             Field::new("source", DataType::Utf8, false),
             Field::new(
                 "vector",
-                DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), dim as i32),
+                DataType::FixedSizeList(
+                    Arc::new(Field::new("item", DataType::Float32, true)),
+                    dim as i32,
+                ),
                 true,
             ),
         ])
     }
 
     pub async fn insert_chunks(&self, chunks: Vec<Chunk>) -> Result<()> {
-        if chunks.is_empty() { return Ok(()); }
+        if chunks.is_empty() {
+            return Ok(());
+        }
         let dim = self.dim;
         let schema = Arc::new(Self::schema(dim));
 
         let ids = StringArray::from(chunks.iter().map(|c| c.id.as_str()).collect::<Vec<_>>());
-        let topic_ids = StringArray::from(chunks.iter().map(|c| c.topic_id.as_str()).collect::<Vec<_>>());
+        let topic_ids = StringArray::from(
+            chunks
+                .iter()
+                .map(|c| c.topic_id.as_str())
+                .collect::<Vec<_>>(),
+        );
         let idxs = UInt32Array::from(chunks.iter().map(|c| c.chunk_idx).collect::<Vec<_>>());
         let texts = StringArray::from(chunks.iter().map(|c| c.text.as_str()).collect::<Vec<_>>());
-        let sources = StringArray::from(chunks.iter().map(|c| c.source.as_str()).collect::<Vec<_>>());
+        let sources =
+            StringArray::from(chunks.iter().map(|c| c.source.as_str()).collect::<Vec<_>>());
 
-        let mut vec_builder = FixedSizeListBuilder::new(
-            arrow_array::builder::Float32Builder::new(),
-            dim as i32,
-        );
+        let mut vec_builder =
+            FixedSizeListBuilder::new(arrow_array::builder::Float32Builder::new(), dim as i32);
         for c in &chunks {
             vec_builder.values().append_slice(&c.vector);
             vec_builder.append(true);
@@ -120,25 +132,41 @@ impl VectorStore {
 
     pub async fn search(&self, vector: &[f32], limit: usize) -> Result<Vec<SearchResult>> {
         let table = self.db.open_table(TABLE).execute().await?;
-        let mut results = table
-            .vector_search(vector)?
-            .limit(limit)
-            .execute()
-            .await?;
+        let mut results = table.vector_search(vector)?.limit(limit).execute().await?;
 
         let mut out = Vec::new();
         while let Some(batch) = results.next().await {
             let batch = batch?;
-            let ids = batch.column_by_name("id").unwrap()
-                .as_any().downcast_ref::<StringArray>().unwrap();
-            let topic_ids = batch.column_by_name("topic_id").unwrap()
-                .as_any().downcast_ref::<StringArray>().unwrap();
-            let texts = batch.column_by_name("text").unwrap()
-                .as_any().downcast_ref::<StringArray>().unwrap();
-            let sources = batch.column_by_name("source").unwrap()
-                .as_any().downcast_ref::<StringArray>().unwrap();
-            let scores = batch.column_by_name("_distance").unwrap()
-                .as_any().downcast_ref::<Float32Array>().unwrap();
+            let ids = batch
+                .column_by_name("id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let topic_ids = batch
+                .column_by_name("topic_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let texts = batch
+                .column_by_name("text")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let sources = batch
+                .column_by_name("source")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let scores = batch
+                .column_by_name("_distance")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap();
 
             for i in 0..batch.num_rows() {
                 out.push(SearchResult {
@@ -156,7 +184,9 @@ impl VectorStore {
     pub async fn delete_by_topic(&self, topic_id: &str) -> Result<()> {
         let table = self.db.open_table(TABLE).execute().await?;
         let escaped_id = topic_id.replace('\'', "''");
-        table.delete(&format!("topic_id = '{}'", escaped_id)).await?;
+        table
+            .delete(&format!("topic_id = '{}'", escaped_id))
+            .await?;
         Ok(())
     }
 }
@@ -180,7 +210,9 @@ mod tests {
     #[tokio::test]
     async fn test_insert_and_search() {
         let dir = tempdir().unwrap();
-        let store = VectorStore::new_with_dim(dir.path().to_str().unwrap(), 4).await.unwrap();
+        let store = VectorStore::new_with_dim(dir.path().to_str().unwrap(), 4)
+            .await
+            .unwrap();
 
         let dim = 4;
         let chunks: Vec<Chunk> = (0..5).map(|i| make_chunk(i, dim)).collect();
@@ -194,7 +226,9 @@ mod tests {
     #[tokio::test]
     async fn test_delete_by_topic() {
         let dir = tempdir().unwrap();
-        let store = VectorStore::new_with_dim(dir.path().to_str().unwrap(), 4).await.unwrap();
+        let store = VectorStore::new_with_dim(dir.path().to_str().unwrap(), 4)
+            .await
+            .unwrap();
         let dim = 4;
         store.insert_chunks(vec![make_chunk(0, dim)]).await.unwrap();
         store.delete_by_topic("topic-1").await.unwrap();

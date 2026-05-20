@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "rosemary")]
@@ -78,7 +78,8 @@ async fn main() -> Result<()> {
             let p = Path::new(&path);
             if p.is_dir() {
                 println!("Ingesting directory: {:?}...", p);
-                let count = rosemary::ingest::ingest_dir(p, &conn, &store, embedder.as_ref()).await?;
+                let count =
+                    rosemary::ingest::ingest_dir(p, &conn, &store, embedder.as_ref()).await?;
                 println!("Done. Ingested {} files.", count);
             } else {
                 println!("Ingesting file: {:?}...", p);
@@ -108,14 +109,23 @@ async fn main() -> Result<()> {
                 rosemary::ingest::ingest_file(&path, &conn, &store, embedder.as_ref()).await?;
             }
 
-            let session_path = rosemary::digest::write_session_file(&kb_root, &output.session_summary)?;
-            
+            let session_path =
+                rosemary::digest::write_session_file(&kb_root, &output.session_summary)?;
+
             // Insert into sessions table
-            let session_id = session_path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+            let session_id = session_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
             conn.execute(
                 "INSERT INTO sessions (id, summary, file_path) VALUES (?1, ?2, ?3)",
-                libsql::params![session_id, output.session_summary, session_path.to_str().unwrap()],
-            ).await?;
+                libsql::params![
+                    session_id,
+                    output.session_summary,
+                    session_path.to_str().unwrap()
+                ],
+            )
+            .await?;
 
             // Ingest session summary as a chunk
             rosemary::ingest::ingest_file(&session_path, &conn, &store, embedder.as_ref()).await?;
@@ -125,9 +135,8 @@ async fn main() -> Result<()> {
         }
         Commands::Recall { query } => {
             println!("Searching: {}...", query);
-            let results = rosemary::recall::recall(
-                &query, &conn, &store, embedder.as_ref(), 5
-            ).await?;
+            let results =
+                rosemary::recall::recall(&query, &conn, &store, embedder.as_ref(), 5).await?;
             if results.is_empty() {
                 println!("No results found.");
             } else {
@@ -135,7 +144,10 @@ async fn main() -> Result<()> {
                     println!("\n# {} (score: {:.2})", r.title, r.score);
                     println!("Path: {}", r.file_path);
                     if !r.snippet.is_empty() {
-                        println!("Snippet: {}...", &r.snippet.chars().take(120).collect::<String>());
+                        println!(
+                            "Snippet: {}...",
+                            &r.snippet.chars().take(120).collect::<String>()
+                        );
                     }
                 }
             }

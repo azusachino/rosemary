@@ -21,7 +21,9 @@ mod tests {
         async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
             Ok(texts.iter().map(|_| vec![0.0f32; 4]).collect())
         }
-        fn dim(&self) -> usize { 4 }
+        fn dim(&self) -> usize {
+            4
+        }
     }
 
     #[tokio::test]
