@@ -3,7 +3,13 @@ use libsql::{Builder, Connection, Database};
 use std::env;
 
 pub async fn init_db() -> Result<(Database, Connection)> {
-    let db_path = env::var("DATABASE_URL").unwrap_or_else(|_| "rosemary.db".to_string());
+    let paths = crate::paths::RosemaryPaths::resolve();
+    if !paths.data_dir.exists() {
+        std::fs::create_dir_all(&paths.data_dir)?;
+    }
+
+    let db_path = env::var("DATABASE_URL")
+        .unwrap_or_else(|_| paths.db_path().to_str().unwrap().to_string());
     let db = Builder::new_local(&db_path).build().await?;
     let conn = db.connect()?;
 
@@ -40,28 +46,40 @@ pub async fn init_db() -> Result<(Database, Connection)> {
     )
     .await?;
 
+    // Graph Tier (Hot)
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS entities (
-            id          TEXT PRIMARY KEY,
-            name        TEXT NOT NULL UNIQUE,
-            entity_type TEXT
+        "CREATE TABLE IF NOT EXISTS mcp_entities (
+            name        TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
         (),
-    )
-    .await?;
+    ).await?;
 
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS relations (
-            from_id       TEXT NOT NULL,
-            to_id         TEXT NOT NULL,
-            relation_type TEXT NOT NULL,
-            PRIMARY KEY (from_id, to_id, relation_type),
-            FOREIGN KEY (from_id) REFERENCES entities(id),
-            FOREIGN KEY (to_id)   REFERENCES entities(id)
+        "CREATE TABLE IF NOT EXISTS mcp_observations (
+            id          TEXT PRIMARY KEY,
+            entity_name TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (entity_name) REFERENCES mcp_entities(name) ON DELETE CASCADE
         )",
         (),
-    )
-    .await?;
+    ).await?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS mcp_relations (
+            from_entity   TEXT NOT NULL,
+            to_entity     TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (from_entity, to_entity, relation_type),
+            FOREIGN KEY (from_entity) REFERENCES mcp_entities(name) ON DELETE CASCADE,
+            FOREIGN KEY (to_entity)   REFERENCES mcp_entities(name) ON DELETE CASCADE
+        )",
+        (),
+    ).await?;
 
     // Triggers to keep FTS5 in sync with topics
     conn.execute(

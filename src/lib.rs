@@ -20,5 +20,7 @@ pub mod shutdown;
 mod tests;
 
 // Shared Utilities
+pub mod paths;
+pub mod mcp;
 pub use anyhow::{Result, anyhow, bail};
 pub use tokio::task::JoinHandle;
