@@ -1,5 +1,3 @@
-NIX_RUN := $(if $(filter $(IN_NIX_SHELL),),nix develop --command ,)
-
 .PHONY: help build build-documents run test test-documents test-scripts fmt lint check check-documents bench clean init
 
 # Default task: Show help
@@ -20,45 +18,45 @@ help:
 	@echo "  init          - Initialize development environment (mise, uv, etc.)"
 
 build:
-	$(NIX_RUN) cargo build
+	cargo build
 
 build-documents:
-	$(NIX_RUN) cargo build --features documents
+	cargo build --features documents
 
 run:
-	$(NIX_RUN) cargo run -- $(ARGS)
+	cargo run -- $(ARGS)
 
 test:
-	$(NIX_RUN) cargo test -- --test-threads=1
+	cargo test -- --test-threads=1
 
 test-documents:
-	$(NIX_RUN) cargo test --features documents -- --test-threads=1
+	cargo test --features documents -- --test-threads=1
 
 test-scripts:
-	$(NIX_RUN) uv run scripts/verify_cli.py
+	uv run scripts/verify_cli.py
 
 fmt:
-	$(NIX_RUN) cargo fmt
-	$(NIX_RUN) prettier --write "**/*.{json,yaml,yml}" || true
-	$(NIX_RUN) uv run ruff format . || true
+	cargo fmt
+	bun x prettier --write "**/*.{json,yaml,yml}" || true
+	uv run ruff format . || true
 
 lint:
-	$(NIX_RUN) cargo clippy -- -D warnings
-	$(NIX_RUN) uv run ruff check . || true
+	cargo clippy -- -D warnings
+	uv run ruff check . || true
 
 check: fmt lint test test-scripts
 
 check-documents: build-documents test-documents
 
 bench:
-	$(NIX_RUN) cargo bench --bench graph
+	cargo bench --bench graph
 
 clean:
-	$(NIX_RUN) cargo clean
+	cargo clean
 	rm -rf target/
 
 init:
-	$(NIX_RUN) mise install || true
-	$(NIX_RUN) uv venv --python 3.14 || true
-	$(NIX_RUN) uv add ruff --dev || true
+	mise install || true
+	uv venv --python 3.14 || true
+	uv add ruff --dev || true
 	mkdir -p scripts
