@@ -105,6 +105,16 @@ See [`docs/architecture.md`](architecture.md#performance-headroom) for implement
 
 ---
 
+## v0.9.0 — 2026-05-21
+
+- Public release preparation:
+    - Metadata and licensing (MIT).
+    - GitHub Actions CI/CD workflows (`mise`-managed).
+    - Cleaned up documentation (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`).
+    - Removed Nix infrastructure.
+    - Standardized project toolchain via `mise`.
+---
+
 ## v0.1.0 — 2026-04-08
 
 Initial project setup. Basic document ingestion with libSQL + LanceDB, FTS5 on topics. Agent infrastructure (`AGENTS.md`, `.claude/rules/`, `GEMINI.md`, `Makefile`).
