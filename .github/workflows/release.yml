@@ -10,10 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
-      - uses: DeterminateSystems/magic-nix-cache-action@v9
+      - uses: jdx/mise-action@v2
       - name: Build Release
-        run: nix develop -c cargo build --release
+        run: cargo build --release
       - name: Upload Binary
         uses: softprops/action-gh-release@v2
         with:
