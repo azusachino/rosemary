@@ -2,6 +2,12 @@
 name = "rosemary"
 version = "0.2.0"
 edition = "2024"
+authors = ["haru <azusachino@proton.me>"]
+description = "A persistent, project-local knowledge graph CLI for AI agents."
+license = "MIT"
+repository = "https://github.com/azusachino/rosemary"
+keywords = ["knowledge-graph", "cli", "ai-agents", "persistent-memory", "rust"]
+categories = ["development-tools"]
 
 [features]
 default = []
