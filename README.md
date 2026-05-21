@@ -1,77 +1,43 @@
-# rosemary
+# Rosemary
 
-> 思い出、静かな力強さ — _memory, quiet strength_
+Rosemary is a persistent, project-local knowledge graph CLI designed for AI agents. It allows agents to maintain memory, track session state, and persist knowledge directly within your project directory, ensuring context is preserved across sessions.
 
-A persistent knowledge graph CLI for humans and LLM agents. Store facts, decisions, and session state across projects and conversations — then retrieve them instantly with ranked full-text search.
+## Project Philosophy
 
-## What it is
+- **Persistent**: Decisions and task state survive across conversations.
+- **Local-first**: Data is stored inside your project, not an external server.
+- **Agent-ready**: Optimized for CLI workflows, allowing agents to ingest, search, and compact knowledge.
+- **Zero-latency**: Built on SQLite/FTS5 for sub-millisecond graph operations.
 
-Rosemary maintains a graph of **entities** (named nodes), **observations** (facts attached to nodes), and **relations** (typed edges between nodes). Think of it as a local, offline, zero-latency alternative to `@modelcontextprotocol/server-memory` — except the storage lives in a SQLite file you own.
+## Installation
 
-## Quick start
-
-```bash
-# Store a fact
-rosemary create-entities "my-project" "project"
-rosemary add-observations "my-project" "Uses libSQL — chosen for embedded + Turso remote parity"
-
-# Link entities
-rosemary create-entities "UserPreferences" "preference"
-rosemary create-relations "my-project" "UserPreferences" "follows"
-
-# Retrieve (FTS, stemmed, ranked)
-rosemary search-nodes "libSQL"
-
-# Full graph dump
-rosemary read-graph
-```
-
-## Design
-
-Two storage tiers, one file:
-
-| Tier             | Technology          | Use for                                                |
-| ---------------- | ------------------- | ------------------------------------------------------ |
-| Graph (hot)      | libSQL + FTS5       | Entities, observations, relations — instant CLI access |
-| Documents (cold) | LanceDB + fastembed | Semantic search over ingested Markdown files           |
-
-Graph operations have no model startup cost and are compiled by default. The document tier is behind Cargo feature `documents` so default debug builds stay small. The FTS5 index is a b-tree inside the `.db` file — queried with a file open, not a server call. See [`docs/architecture.md`](docs/architecture.md).
-
-## Documentation
-
-- [`docs/architecture.md`](docs/architecture.md) — design decisions, storage tiers, FTS5 rationale, performance
-- [`docs/usage.md`](docs/usage.md) — human workflows and agent integration
-- [`docs/CHANGELOG.md`](docs/CHANGELOG.md) — release notes
-- [`SKILL.md`](SKILL.md) — agent skill reference (full command API)
-
-## Install
+### From Source (Cargo)
+Requires Rust 1.85+ (Edition 2024):
 
 ```bash
-cargo install --git https://github.com/azusachino/rosemary rosemary
-# or, once GitHub releases ship binaries:
-cargo binstall rosemary
+cargo install --git https://github.com/azusachino/rosemary
 ```
 
-Then bootstrap the user-level workspace:
+## Quick Start
 
-```bash
-rosemary init           # XDG paths under $HOME (default)
-rosemary init --local   # project-local: ./.rosemary/ + ./rosemary.toml
-```
+1. Initialize your project:
+   ```bash
+   rosemary init --local
+   ```
 
-The default `init` writes to `~/.local/share/rosemary/` and `~/.config/rosemary/` on Linux (or the platform equivalent) — owned by your user, no elevation needed. Use `--local` inside a project root when you want that project's graph isolated and checked-in alongside the code.
+2. Store context as you work:
+   ```bash
+   rosemary add-observations "my-task" "Decided to use WAL mode for concurrency"
+   ```
 
-## Build
+3. Search for context later:
+   ```bash
+   rosemary search-nodes "WAL"
+   ```
 
-```bash
-make build            # build graph/MCP CLI only
-make build-documents  # build with ingest/query/compact document commands
-make check            # fmt + clippy + tests for default graph/MCP build
-make bench            # graph-tier microbenchmark harness
-make test             # tests only
-```
+## Development
 
-Requires Nix (`nix develop`) or a Rust toolchain with the dependencies in `Cargo.toml`.
+- **Task Runner**: `make` (Nix-wrapped)
+- **Checks**: Run `make check` to verify formatting, linting, and tests.
 
-`search-nodes` returns the top 100 matches by default. Use `--limit <N>` for
-larger ranked result sets, and use `read-graph` for full export.
+See [`docs/usage.md`](docs/usage.md) for the full CLI reference.
