@@ -45,23 +45,24 @@ async fn graph_crud_handles_edges() {
     .await
     .unwrap();
 
-    let graph = db::mcp_open_nodes(&conn, vec!["alpha".into()])
+    // "missing" should be safely ignored by open_nodes
+    let graph = db::mcp_open_nodes(&conn, vec!["alpha".into(), "missing".into()])
         .await
         .unwrap();
     assert_eq!(graph.entities.len(), 1);
     assert_eq!(graph.entities[0].name, "alpha");
-    assert_eq!(graph.relations.len(), 1);
+    assert_eq!(graph.relations.len(), 1); // 1-hop expansion brings in the relation
 
     let hits = db::mcp_search_nodes(&conn, "run").await.unwrap();
-    assert_eq!(hits.entities.len(), 2);
-    assert_eq!(hits.entities[0].name, "alpha");
+    assert_eq!(hits.entities.len(), 2); // 'alpha' matched FTS, 'beta' brought in by 1-hop relation expansion!
+    assert!(hits.entities.iter().any(|e| e.name == "alpha"));
 
-    // "missing" is indeed missing, so this should not create a relation
+    // creating a relation to a missing entity should fail foreign key constraints
     let bad_relation = db::mcp_create_relations(
         &conn,
         vec![mcp::RelationInput {
             from: "alpha".into(),
-            to: "missing-node".into(),
+            to: "missing".into(),
             relation_type: "uses".into(),
         }],
     )
@@ -71,11 +72,17 @@ async fn graph_crud_handles_edges() {
     db::mcp_delete_entities(&conn, vec!["beta".into()])
         .await
         .unwrap();
-    let graph = db::mcp_open_nodes(&conn, vec!["alpha".into()])
+        
+    let graph = db::mcp_open_nodes(&conn, vec!["alpha".into(), "beta".into()])
         .await
         .unwrap();
     assert_eq!(graph.entities.len(), 1);
     assert!(graph.relations.is_empty());
+
+    // Deleting a non-existent entity should be a no-op, no panic
+    db::mcp_delete_entities(&conn, vec!["missing".into()])
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -83,23 +90,52 @@ async fn graph_accepts_irregular_text_without_sql_injection() {
     let (_dir, conn) = test_conn().await;
     let raw_name = "node-日本語-'; DROP TABLE mcp_entities; --";
     let normalized_name = rosemary::normalize::normalize_key(raw_name);
+    let odd_observation = "日本語 русский عربى control:\u{0007}\nquote:' double:\" percent:%";
+    let large_observation = "large-observation ".repeat(16_384);
 
     db::mcp_create_entities(
         &conn,
         vec![mcp::EntityInput {
             name: raw_name.into(),
-            entity_type: "project-type".into(),
-            observations: vec!["some obs".into()],
+            entity_type: "project'; DROP TABLE mcp_observations; --".into(),
+            observations: vec![odd_observation.into(), large_observation.clone()],
         }],
     )
     .await
     .unwrap();
 
-    let opened = db::mcp_open_nodes(&conn, vec![normalized_name.clone()])
+    // Duplicate create is an entity no-op, but supplied observations are still appended.
+    db::mcp_create_entities(
+        &conn,
+        vec![mcp::EntityInput {
+            name: raw_name.into(),
+            entity_type: "ignored".into(),
+            observations: vec!["second insert observation".into()],
+        }],
+    )
+    .await
+    .unwrap();
+
+    let opened = db::mcp_open_nodes(&conn, vec![raw_name.into()])
         .await
         .unwrap();
     assert_eq!(opened.entities.len(), 1);
     assert_eq!(opened.entities[0].name, normalized_name);
+    // The entity type is NOT part of the key namespace, so it remains un-normalized raw string
+    assert_eq!(
+        opened.entities[0].entity_type,
+        "project'; DROP TABLE mcp_observations; --"
+    );
+    assert_eq!(opened.entities[0].observations.len(), 3);
+    assert!(opened.entities[0].observations.contains(&large_observation));
+
+    let unicode_hits = db::mcp_search_nodes(&conn, "日本語").await.unwrap();
+    // 1-hop relation expansion applies, but here it's isolated
+    assert_eq!(unicode_hits.entities.len(), 1);
+
+    // SQL injection text in observations should be safely searchable without syntax errors
+    let injection_hits = db::mcp_search_nodes(&conn, "drop").await.unwrap();
+    assert_eq!(injection_hits.entities.len(), 1);
 
     db::mcp_create_entities(
         &conn,
@@ -115,19 +151,25 @@ async fn graph_accepts_irregular_text_without_sql_injection() {
     db::mcp_create_relations(
         &conn,
         vec![mcp::RelationInput {
-            from: normalized_name.clone(),
+            from: raw_name.into(),
             to: "safe-target".into(),
-            relation_type: "relates".into(),
+            relation_type: "relates'; DELETE FROM mcp_relations; --".into(),
         }],
     )
     .await
     .unwrap();
 
-    let related = db::mcp_open_nodes(&conn, vec![normalized_name.clone(), "safe-target".into()])
+    let related = db::mcp_open_nodes(&conn, vec![raw_name.into(), "safe-target".into()])
         .await
         .unwrap();
     assert_eq!(related.relations.len(), 1);
-    assert_eq!(related.relations[0].from, normalized_name);
+    assert_eq!(
+        related.relations[0].relation_type,
+        "relates'; DELETE FROM mcp_relations; --"
+    );
+
+    let all = db::mcp_read_graph(&conn).await.unwrap();
+    assert_eq!(all.entities.len(), 2);
 }
 
 #[tokio::test]
