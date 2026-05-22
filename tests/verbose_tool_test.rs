@@ -1,5 +1,5 @@
 use rosemary::db::init_db;
-use rosemary::mcp::{JsonRpcRequest, handle_tools_call};
+use rosemary::mcp::handle_tools_call;
 use serde_json::json;
 use tempfile::tempdir;
 
