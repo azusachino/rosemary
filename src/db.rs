@@ -534,6 +534,44 @@ async fn load_entities(
     Ok(entities)
 }
 
+pub async fn mcp_stats(conn: &Connection) -> Result<(usize, usize, usize)> {
+    let mut rows = conn.query("SELECT COUNT(*) FROM mcp_entities", ()).await?;
+    let entities_count: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+
+    let mut rows = conn.query("SELECT COUNT(*) FROM mcp_relations", ()).await?;
+    let relations_count: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+
+    let mut rows = conn
+        .query("SELECT COUNT(*) FROM mcp_observations", ())
+        .await?;
+    let observations_count: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+
+    Ok((
+        entities_count as usize,
+        relations_count as usize,
+        observations_count as usize,
+    ))
+}
+
+pub async fn mcp_reset(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM mcp_relations", ()).await?;
+    conn.execute("DELETE FROM mcp_observations", ()).await?;
+    conn.execute("DELETE FROM mcp_entities", ()).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

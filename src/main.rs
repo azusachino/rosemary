@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "rosemary")]
+#[command(version)]
 #[command(about = "Rosemary: Knowledge Graph & Memory CLI", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -75,6 +76,25 @@ enum Commands {
         /// instead of the user-level XDG paths.
         #[arg(long)]
         local: bool,
+    },
+    /// Show statistics about the knowledge graph
+    Stats,
+    /// Export the knowledge graph to a JSON file
+    Export {
+        /// Path to the output JSON file
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Import a knowledge graph from a JSON file
+    Import {
+        /// Path to the input JSON file
+        file: String,
+    },
+    /// Reset the knowledge graph (delete all entities, relations, and observations)
+    Reset {
+        /// Force reset without confirmation
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -288,6 +308,62 @@ async fn main() -> Result<()> {
         }
         Commands::Mcp => {
             rosemary::mcp::run_server(conn).await?;
+        }
+        Commands::Stats => {
+            let (entities, relations, observations) = rosemary::db::mcp_stats(&conn).await?;
+            println!("Knowledge Graph Statistics:");
+            println!("  Entities:     {}", entities);
+            println!("  Relations:    {}", relations);
+            println!("  Observations: {}", observations);
+        }
+        Commands::Export { output } => {
+            let graph = rosemary::db::mcp_read_graph(&conn).await?;
+            let json = serde_json::to_string_pretty(&graph)?;
+            if let Some(path) = output {
+                std::fs::write(&path, json)?;
+                println!("Graph exported to {}", path);
+            } else {
+                println!("{}", json);
+            }
+        }
+        Commands::Import { file } => {
+            let content = std::fs::read_to_string(&file)?;
+            let graph: rosemary::mcp::Graph = serde_json::from_str(&content)?;
+
+            // Re-construct entity inputs
+            let mut entities = Vec::new();
+            for e in graph.entities {
+                entities.push(rosemary::mcp::EntityInput {
+                    name: e.name,
+                    entity_type: e.entity_type,
+                    observations: e.observations,
+                });
+            }
+
+            if !entities.is_empty() {
+                rosemary::db::mcp_create_entities(&conn, entities).await?;
+                println!("Imported entities and observations.");
+            }
+            if !graph.relations.is_empty() {
+                rosemary::db::mcp_create_relations(&conn, graph.relations).await?;
+                println!("Imported relations.");
+            }
+            println!("Import complete.");
+        }
+        Commands::Reset { force } => {
+            if !force {
+                use std::io::Write;
+                print!("Are you sure you want to completely clear the knowledge graph? [y/N]: ");
+                std::io::stdout().flush()?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                if input.trim().to_lowercase() != "y" {
+                    println!("Reset aborted.");
+                    return Ok(());
+                }
+            }
+            rosemary::db::mcp_reset(&conn).await?;
+            println!("Knowledge graph reset successfully.");
         }
         _ => unreachable!(),
     }
