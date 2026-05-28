@@ -4,7 +4,6 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
-const DEFAULT_ENTITY_COUNT: usize = 10_000;
 const SEARCH_ITERS: usize = 50;
 const BROAD_SEARCH_ITERS: usize = 5;
 const BROAD_EXPORT_ITERS: usize = 3;
@@ -152,14 +151,6 @@ fn main() {
             println!("reset: total={:?}", reset_elapsed);
         }
     });
-}
-
-fn env_usize(name: &str, default: usize) -> usize {
-    env::var(name)
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(default)
 }
 
 async fn seed_graph(conn: &libsql::Connection, entity_count: usize) {
