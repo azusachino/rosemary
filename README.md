@@ -35,6 +35,14 @@ cargo install --git https://github.com/azusachino/rosemary
    rosemary search-nodes "WAL"
    ```
 
+## Key Commands
+
+- `rosemary --version`: Check the CLI version.
+- `rosemary stats`: View graph statistics (entity, relation, and observation counts).
+- `rosemary export -o graph.json`: Dump the graph to a JSON file.
+- `rosemary import graph.json`: Restore graph data from a JSON file.
+- `rosemary reset`: Completely wipe the graph (prompts for confirmation, bypass with `--force`).
+
 ## Development
 
 - **Task Runner**: `make` (Nix-wrapped)

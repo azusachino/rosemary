@@ -105,7 +105,16 @@ rosemary compact  # syncs graph → markdown files for durable backup
 **Inspect the full graph:**
 
 ```bash
+rosemary stats                                # Quick count of entities, relations, observations
 rosemary read-graph | jq '.entities[] | select(.entityType == "session")'
+```
+
+**Backup, Restore, and Reset:**
+
+```bash
+rosemary export -o backup.json                # Export the entire graph to JSON
+rosemary import backup.json                   # Import entities and relations from a JSON backup
+rosemary reset                                # Interactively clear the entire graph (use --force to bypass)
 ```
 
 **Ingest Markdown into the document tier (optional):**

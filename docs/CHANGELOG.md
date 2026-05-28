@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.0 — CLI Enhancements
+
+### New features
+
+- **`--version` support**: Added native clap support for displaying the current CLI version via `rosemary --version`.
+- **`stats` subcommand**: New `rosemary stats` command to quickly inspect the knowledge graph size (entities, relations, observations).
+- **`export` / `import` subcommands**: New `rosemary export -o graph.json` and `rosemary import graph.json` commands to backup, share, and restore the knowledge graph.
+- **`reset` subcommand**: New `rosemary reset` command to clear the knowledge graph (requires interactive `[y/N]` confirmation, or `--force`).
+
 ## v0.3.1 — Workspace Path Discovery Fix
 
 ### Fixes
