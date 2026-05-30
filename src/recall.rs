@@ -145,7 +145,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         unsafe {
-            std::env::set_var("DATABASE_URL", db_path.to_str().unwrap());
+            std::env::set_var(crate::db::ENV_DATABASE_URL, db_path.to_str().unwrap());
         }
 
         let mut f = std::fs::File::create(dir.path().join("rust-pinning.md")).unwrap();

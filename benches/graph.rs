@@ -16,7 +16,8 @@ fn main() {
         .build()
         .expect("build tokio runtime");
 
-    let sizes_env = env::var("ROSEMARY_BENCH_SIZES").unwrap_or_else(|_| "1000,10000,50000".to_string());
+    let sizes_env =
+        env::var("ROSEMARY_BENCH_SIZES").unwrap_or_else(|_| "1000,10000,50000".to_string());
     let sizes: Vec<usize> = sizes_env
         .split(',')
         .filter_map(|s| s.trim().parse().ok())
