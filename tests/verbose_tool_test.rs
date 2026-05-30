@@ -8,7 +8,7 @@ async fn test_create_entities_returns_graph_state() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("test.db");
     unsafe {
-        std::env::set_var("ROSEMARY_DATABASE_URL", db_path.to_str().unwrap());
+        std::env::set_var(rosemary::db::ENV_DATABASE_URL, db_path.to_str().unwrap());
     }
     let (_db, conn) = init_db().await.unwrap();
     let conn = &conn;
@@ -40,7 +40,7 @@ async fn test_add_observations_returns_graph_state() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("test.db");
     unsafe {
-        std::env::set_var("ROSEMARY_DATABASE_URL", db_path.to_str().unwrap());
+        std::env::set_var(rosemary::db::ENV_DATABASE_URL, db_path.to_str().unwrap());
     }
     let (_db, conn) = init_db().await.unwrap();
     let conn = &conn;

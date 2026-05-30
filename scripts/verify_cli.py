@@ -76,7 +76,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="rosemary-cli-") as tmp:
         env = os.environ.copy()
-        env["DATABASE_URL"] = str(Path(tmp) / "rosemary.db")
+        env["ROSEMARY_DATABASE_URL"] = str(Path(tmp) / "rosemary.db")
 
         run(["create-entities", "project-a", "project"], env)
         run(["create-entities", "project-a:session", "session"], env)
@@ -200,7 +200,7 @@ def main() -> None:
         db_path = Path(tmp) / "corrupt.db"
         db_path.write_bytes(b"not a sqlite database")
         env = os.environ.copy()
-        env["DATABASE_URL"] = str(db_path)
+        env["ROSEMARY_DATABASE_URL"] = str(db_path)
         failed = run_expect_failure(["read-graph"], env)
         assert "database" in failed.stderr.lower()
 

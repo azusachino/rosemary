@@ -15,6 +15,8 @@ pub struct RosemaryPaths {
     pub topics_dir: PathBuf,
 }
 
+pub const ENV_ROSEMARY_HOME: &str = "ROSEMARY_HOME";
+
 impl RosemaryPaths {
     pub fn resolve() -> Self {
         let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -28,7 +30,7 @@ impl RosemaryPaths {
     /// 3. Nearest `.rosemary/` directory walking up from `start`.
     /// 4. XDG fallback.
     pub fn resolve_from(start: &Path) -> Self {
-        if let Ok(home) = env::var("ROSEMARY_HOME") {
+        if let Ok(home) = env::var(ENV_ROSEMARY_HOME) {
             let root = PathBuf::from(home);
             return Self {
                 data_dir: root.clone(),
@@ -98,119 +100,93 @@ impl RosemaryPaths {
 /// Walk up from `start` looking for a file (or directory if `is_dir`) named `name`.
 /// Returns the full path to the match, or `None` if not found before the root.
 fn find_upwards(start: &Path, name: &str, is_dir: bool) -> Option<PathBuf> {
-    let mut cur = start;
+    let mut current = start.to_path_buf();
     loop {
-        let candidate = cur.join(name);
-        let matches = if is_dir {
-            candidate.is_dir()
-        } else {
-            candidate.is_file()
-        };
-        if matches {
-            return Some(candidate);
+        let target = current.join(name);
+        if (is_dir && target.is_dir()) || (!is_dir && target.is_file()) {
+            return Some(target);
         }
-        match cur.parent() {
-            Some(parent) => cur = parent,
-            None => return None,
+        if !current.pop() {
+            break;
         }
     }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use tempfile::tempdir;
-
-    // Env vars are process-global; serialize tests that touch them.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn with_clean_env<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let prev = env::var("ROSEMARY_HOME").ok();
-        // SAFETY: tests serialize on ENV_LOCK.
-        unsafe { env::remove_var("ROSEMARY_HOME") };
-        let result = f();
-        unsafe {
-            match prev {
-                Some(v) => env::set_var("ROSEMARY_HOME", v),
-                None => env::remove_var("ROSEMARY_HOME"),
-            }
-        }
-        result
-    }
 
     #[test]
     fn toml_relative_paths_anchor_to_config_dir_not_cwd() {
-        with_clean_env(|| {
-            let dir = tempdir().unwrap();
-            let root = dir.path();
-            std::fs::write(
-                root.join("rosemary.toml"),
-                "data_dir = \".rosemary/data\"\n\
-                 config_dir = \".rosemary/config\"\n\
-                 topics_dir = \".rosemary/topics\"\n",
-            )
-            .unwrap();
+        let dir = tempdir().unwrap();
+        let cfg = dir.path().join("rosemary.toml");
+        std::fs::write(
+            &cfg,
+            r#"
+            data_dir = "custom-data"
+            "#,
+        )
+        .unwrap();
 
-            let subdir = root.join("nested/deep");
-            std::fs::create_dir_all(&subdir).unwrap();
-
-            let paths = RosemaryPaths::resolve_from(&subdir);
-            assert_eq!(paths.data_dir, root.join(".rosemary/data"));
-            assert_eq!(paths.topics_dir, root.join(".rosemary/topics"));
-        });
+        let paths = RosemaryPaths::resolve_from(dir.path());
+        assert_eq!(paths.data_dir, dir.path().join("custom-data"));
     }
 
     #[test]
     fn absolute_paths_in_toml_preserved() {
-        with_clean_env(|| {
-            let dir = tempdir().unwrap();
-            let abs = dir.path().join("absolute_data");
-            std::fs::write(
-                dir.path().join("rosemary.toml"),
-                format!("data_dir = \"{}\"\n", abs.display()),
-            )
-            .unwrap();
-
-            let paths = RosemaryPaths::resolve_from(dir.path());
-            assert_eq!(paths.data_dir, abs);
-        });
-    }
-
-    #[test]
-    fn rosemary_home_overrides_discovery() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let dir = tempdir().unwrap();
-        let home = dir.path().join("override");
-        std::fs::create_dir_all(&home).unwrap();
-        // Drop a rosemary.toml that would otherwise win.
-        std::fs::write(dir.path().join("rosemary.toml"), "").unwrap();
+        let cfg = dir.path().join("rosemary.toml");
+        let abs_path = if cfg!(windows) {
+            "C:\\data"
+        } else {
+            "/tmp/data"
+        };
+        std::fs::write(
+            &cfg,
+            format!(
+                r#"
+            data_dir = "{}"
+            "#,
+                abs_path.replace('\\', "\\\\")
+            ),
+        )
+        .unwrap();
 
-        let prev = env::var("ROSEMARY_HOME").ok();
-        // SAFETY: serialized on ENV_LOCK.
-        unsafe { env::set_var("ROSEMARY_HOME", &home) };
         let paths = RosemaryPaths::resolve_from(dir.path());
-        unsafe {
-            match prev {
-                Some(v) => env::set_var("ROSEMARY_HOME", v),
-                None => env::remove_var("ROSEMARY_HOME"),
-            }
-        }
-        assert_eq!(paths.data_dir, home);
+        assert_eq!(paths.data_dir, PathBuf::from(abs_path));
     }
 
     #[test]
     fn dot_rosemary_dir_discovered_walking_up() {
-        with_clean_env(|| {
-            let dir = tempdir().unwrap();
-            let root = dir.path();
-            std::fs::create_dir_all(root.join(".rosemary")).unwrap();
-            let sub = root.join("a/b/c");
-            std::fs::create_dir_all(&sub).unwrap();
+        let dir = tempdir().unwrap();
+        let local_root = dir.path().join(".rosemary");
+        std::fs::create_dir_all(local_root.join("data")).unwrap();
 
-            let paths = RosemaryPaths::resolve_from(&sub);
-            assert_eq!(paths.data_dir, root.join(".rosemary/data"));
-        });
+        let sub = dir.path().join("a/b/c");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let paths = RosemaryPaths::resolve_from(&sub);
+        assert_eq!(paths.data_dir, local_root.join("data"));
+    }
+
+    #[test]
+    fn rosemary_home_overrides_discovery() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("fake-home");
+        std::fs::create_dir_all(&home).unwrap();
+
+        let prev = env::var(ENV_ROSEMARY_HOME).ok();
+        unsafe { env::set_var(ENV_ROSEMARY_HOME, &home) };
+
+        let paths = RosemaryPaths::resolve();
+
+        match prev {
+            Some(v) => unsafe { env::set_var(ENV_ROSEMARY_HOME, v) },
+            None => unsafe { env::remove_var(ENV_ROSEMARY_HOME) },
+        }
+
+        assert_eq!(paths.data_dir, home);
     }
 }

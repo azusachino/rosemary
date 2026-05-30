@@ -1,4 +1,6 @@
-use rosemary::db::{init_db, mcp_create_entities, mcp_create_relations, mcp_search_nodes};
+use rosemary::db::{
+    ENV_DATABASE_URL, init_db, mcp_create_entities, mcp_create_relations, mcp_search_nodes,
+};
 use rosemary::mcp::{EntityInput, RelationInput};
 use tempfile::tempdir;
 
@@ -6,7 +8,10 @@ use tempfile::tempdir;
 async fn test_search_nodes_expands_neighbors() {
     let dir = tempdir().unwrap();
     unsafe {
-        std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+        std::env::set_var(
+            ENV_DATABASE_URL,
+            dir.path().join("test.db").to_str().unwrap(),
+        );
     }
     let (_db, conn) = init_db().await.unwrap();
 
