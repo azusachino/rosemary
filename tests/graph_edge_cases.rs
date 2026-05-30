@@ -6,7 +6,7 @@ async fn test_conn() -> (tempfile::TempDir, libsql::Connection) {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("edge-cases.db");
     unsafe {
-        std::env::set_var("DATABASE_URL", db_path.to_str().unwrap());
+        std::env::set_var("ROSEMARY_DATABASE_URL", db_path.to_str().unwrap());
     }
     let (_db, conn) = db::init_db().await.unwrap();
     (dir, conn)
@@ -211,7 +211,7 @@ async fn corrupted_database_returns_error() {
     let db_path = dir.path().join("corrupt.db");
     fs::write(&db_path, b"this is not a sqlite database").unwrap();
     unsafe {
-        std::env::set_var("DATABASE_URL", db_path.to_str().unwrap());
+        std::env::set_var("ROSEMARY_DATABASE_URL", db_path.to_str().unwrap());
     }
 
     let result = db::init_db().await;

@@ -37,8 +37,9 @@ created_at: {}
 }
 
 pub async fn call_digest_llm(transcript: &str) -> Result<DigestOutput> {
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .map_err(|_| anyhow::anyhow!("ANTHROPIC_API_KEY not set"))?;
+    let api_key = std::env::var("ROSEMARY_ANTHROPIC_API_KEY")
+        .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
+        .map_err(|_| anyhow::anyhow!("ROSEMARY_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY not set"))?;
     let model =
         std::env::var("ROSEMARY_DIGEST_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
 

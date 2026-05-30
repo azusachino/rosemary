@@ -6,7 +6,7 @@ use tempfile::tempdir;
 async fn test_entity_name_normalization() {
     let dir = tempdir().unwrap();
     unsafe {
-        std::env::set_var("DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+        std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
     }
     let (_db, conn) = init_db().await.unwrap();
 

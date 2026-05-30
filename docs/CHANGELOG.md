@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4.1 — Environment Isolation & Safety
+
+### Fixes
+
+- **Environment Variable Isolation**: Removed automatic `.env` loading from the current directory. Global CLI tools should not "leach" from local project environments, which frequently caused `DATABASE_URL` collisions in developer projects.
+- **Namespaced Environment Variables**: Prefixed all tool-specific variables with `ROSEMARY_` to prevent namespace pollution.
+    - `DATABASE_URL` → `ROSEMARY_DATABASE_URL`
+    - `LANCEDB_PATH` → `ROSEMARY_LANCEDB_PATH`
+    - `FASTEMBED_CACHE_DIR` → `ROSEMARY_FASTEMBED_CACHE_DIR`
+- **API Key Safety**: Added support for `ROSEMARY_ANTHROPIC_API_KEY` to allow isolating memory-assistant keys from project-level keys.
+
 ## v0.4.0 — CLI Enhancements
 
 ### New features

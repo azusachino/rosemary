@@ -12,7 +12,7 @@ pub async fn init_db() -> Result<(Database, Connection)> {
     }
 
     let db_path =
-        env::var("DATABASE_URL").unwrap_or_else(|_| paths.db_path().to_str().unwrap().to_string());
+        env::var("ROSEMARY_DATABASE_URL").unwrap_or_else(|_| paths.db_path().to_str().unwrap().to_string());
     let db = Builder::new_local(&db_path).build().await?;
     let conn = db.connect()?;
 
@@ -594,7 +594,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         unsafe {
-            std::env::set_var("DATABASE_URL", db_path.to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", db_path.to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 
@@ -612,7 +612,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         unsafe {
-            std::env::set_var("DATABASE_URL", db_path.to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", db_path.to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 
@@ -647,7 +647,7 @@ mod tests {
     async fn test_search_nodes_stemming() {
         let dir = tempdir().unwrap();
         unsafe {
-            std::env::set_var("DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 
@@ -669,7 +669,7 @@ mod tests {
     async fn test_search_nodes_entity_name_fallback() {
         let dir = tempdir().unwrap();
         unsafe {
-            std::env::set_var("DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 
@@ -685,7 +685,7 @@ mod tests {
     async fn test_search_nodes_bm25_ordering() {
         let dir = tempdir().unwrap();
         unsafe {
-            std::env::set_var("DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 
@@ -702,7 +702,7 @@ mod tests {
     async fn test_search_nodes_invalid_fts_syntax_no_panic() {
         let dir = tempdir().unwrap();
         unsafe {
-            std::env::set_var("DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 
@@ -715,7 +715,7 @@ mod tests {
     async fn test_search_nodes_default_limit_and_explicit_limit() {
         let dir = tempdir().unwrap();
         unsafe {
-            std::env::set_var("DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 
@@ -736,7 +736,7 @@ mod tests {
     async fn test_mcp_stats_and_reset() {
         let dir = tempdir().unwrap();
         unsafe {
-            std::env::set_var("DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
+            std::env::set_var("ROSEMARY_DATABASE_URL", dir.path().join("test.db").to_str().unwrap());
         }
         let (_db, conn) = init_db().await.unwrap();
 

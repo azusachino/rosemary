@@ -118,14 +118,14 @@ async fn init_vector(
     rosemary::vector::VectorStore,
     Arc<dyn rosemary::embed::EmbeddingProvider>,
 )> {
-    let lance_path = std::env::var("LANCEDB_PATH")
+    let lance_path = std::env::var("ROSEMARY_LANCEDB_PATH")
         .unwrap_or_else(|_| paths.data_dir.join("lancedb").to_str().unwrap().to_string());
     let store = rosemary::vector::VectorStore::new(&lance_path).await?;
     let embedder: Arc<dyn rosemary::embed::EmbeddingProvider> =
         if std::env::var("ROSEMARY_EMBED_PROVIDER").as_deref() == Ok("claude") {
             anyhow::bail!("ClaudeProvider not yet implemented")
         } else {
-            let cache_dir = std::env::var("FASTEMBED_CACHE_DIR")
+            let cache_dir = std::env::var("ROSEMARY_FASTEMBED_CACHE_DIR")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|_| paths.data_dir.join("fastembed_cache"));
             Arc::new(rosemary::embed::FastEmbedProvider::new(cache_dir)?)
@@ -142,7 +142,6 @@ async fn init_vector(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _ = dotenvy::dotenv();
     let cli = Cli::parse();
 
     // `init` is special: it runs before any DB or config resolution, since
