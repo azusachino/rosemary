@@ -19,6 +19,7 @@ help:
 	@echo "  lint                  Run Rust clippy and Python ruff"
 	@echo "  check                 Run the complete local quality gate"
 	@echo "  clean                 Remove build artifacts"
+	@echo "  init                  Install the pinned toolchain with mise"
 
 build:
 	cargo build
@@ -80,5 +81,4 @@ clean:
 	cargo clean
 
 init:
-	@echo "Nix serves this repo. Enter the dev shell with:"
-	@echo "  nix develop"
+	mise install

@@ -100,7 +100,8 @@ See the [Running in Sandboxed Environments](docs/usage.md#running-in-sandboxed-e
 
 ## 🛠️ Development
 
-- **Task runner**: `make` (Nix-wrapped). `make check` is the quality gate: rustfmt, Prettier, Ruff, Clippy with `-D warnings`, Rust tests, storage-boundary checks, and CLI verification.
+- **Toolchain**: `mise install` (or `make init`) provisions the pinned Rust, uv, bun, and ruff from `.mise.toml`. `flake.nix` still serves CI and release builds.
+- **Task runner**: `make`. `make check` is the quality gate: rustfmt, Prettier, Ruff, Clippy with `-D warnings`, Rust tests, storage-boundary checks, and CLI verification.
 - **Rust quality standard**: keep code rustfmt-clean, introduce no Clippy warnings, preserve single-threaded test isolation, and add regression coverage for behavior changes. Run `make check` before commits.
 - **Coverage**: with `cargo-tarpaulin` installed, run `cargo tarpaulin --out Html --output-dir coverage` and open `coverage/index.html`.
 - **Benchmarks**: run `make bench`; use [performance profiling](docs/benchmarks/profiling.md) for Criterion baselines, DHAT allocations, and SQL plans.
