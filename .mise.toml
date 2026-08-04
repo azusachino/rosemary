@@ -2,7 +2,8 @@
 #
 # Versions are pinned rather than floating: the formatters in particular are
 # style-defining, and an unpinned ruff silently reformats the tree when the
-# machine's version moves. Nix (flake.nix) still drives CI and release builds.
+# machine's version moves. CI and release builds resolve their toolchain from
+# this same file, so local and CI agree by construction.
 
 [tools]
 rust = { version = "1.97.1", components = "rustfmt,clippy" }
