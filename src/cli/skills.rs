@@ -6,6 +6,32 @@ use anyhow::Result;
 use std::io::IsTerminal;
 use tracing::{info, warn};
 
+/// A source resolved to something installable.
+struct Checkout {
+    /// Directory holding the source's skill files.
+    path: std::path::PathBuf,
+    /// Version to record: the git commit, or `local` for a path source.
+    version: String,
+    /// The canonical source string to record on each skill.
+    url: String,
+}
+
+/// Resolve a source to a directory holding its skills. Git sources go through
+/// the shared clone cache; local paths are used in place.
+fn checkout_source(source: &str, caches_dir: &std::path::Path) -> Result<Checkout> {
+    let (url, is_git) = classify_skill_source(source);
+    let (path, version) = if is_git {
+        get_or_update_cached_repo(&url, caches_dir)?
+    } else {
+        let local_path = std::path::Path::new(source);
+        if !local_path.exists() {
+            anyhow::bail!("Local path {} does not exist", source);
+        }
+        (local_path.to_path_buf(), "local".to_string())
+    };
+    Ok(Checkout { path, version, url })
+}
+
 fn classify_skill_source(source: &str) -> (String, bool) {
     let mut git_url = source.to_string();
     let is_git = if source.contains("://") || source.contains("git@") {
@@ -49,18 +75,7 @@ pub(crate) fn run(
             all,
             select,
         }) => {
-            let (git_url, is_git) = classify_skill_source(&source);
-
-            let (target_path, version) = if is_git {
-                let (cache_path, ver) = get_or_update_cached_repo(&git_url, &paths.caches_dir())?;
-                (cache_path, ver)
-            } else {
-                let local_path = std::path::Path::new(&source);
-                if !local_path.exists() {
-                    anyhow::bail!("Local path {} does not exist", source);
-                }
-                (local_path.to_path_buf(), "local".to_string())
-            };
+            let checkout = checkout_source(&source, &paths.caches_dir())?;
 
             let mode = if all {
                 crate::skills::SelectionMode::All
@@ -78,15 +93,87 @@ pub(crate) fn run(
 
             crate::skills::install_skills_from_dir(
                 backend,
-                &target_path,
-                &git_url,
-                &version,
+                &checkout.path,
+                &checkout.url,
+                &checkout.version,
                 mode,
                 is_tty,
                 prune,
             )?;
 
             info!("Skills installed successfully.");
+        }
+        Some(SkillsCommands::Sync) => {
+            let config_file = paths.config_file.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no asobi.toml found; `skills sync` reads its `[skills]` block \
+                     (create one with `asobi init --local`)"
+                )
+            })?;
+            let config =
+                crate::skills_config::SkillsConfig::load(config_file)?.ok_or_else(|| {
+                    anyhow::anyhow!("{} declares no `[skills]` block", config_file.display())
+                })?;
+            if config.sources.is_empty() {
+                anyhow::bail!(
+                    "{} declares no `[[skills.source]]` entries",
+                    config_file.display()
+                );
+            }
+
+            // Validate the whole declaration before touching anything, so a
+            // typo in the last source does not leave a half-applied sync.
+            let selections = config
+                .sources
+                .iter()
+                .map(|s| s.selection())
+                .collect::<Result<Vec<_>>>()?;
+
+            let mut declared_slugs = std::collections::HashSet::new();
+            let mut desired = Vec::new();
+            for (declared, mode) in config.sources.iter().zip(selections) {
+                let checkout = checkout_source(&declared.url, &paths.caches_dir())?;
+                declared_slugs.insert(crate::skills::derive_source_slug(&checkout.url));
+
+                let outcome = crate::skills::install_skills_from_dir(
+                    backend,
+                    &checkout.path,
+                    &checkout.url,
+                    &checkout.version,
+                    mode,
+                    false,
+                    true,
+                )?;
+                info!(
+                    "{}: {} installed, {} pruned",
+                    declared.url,
+                    outcome.installed.len(),
+                    outcome.pruned.len()
+                );
+                desired.extend(outcome.installed);
+            }
+
+            // A source dropped from the config leaves the graph entirely.
+            let stale: Vec<String> = backend
+                .list_skills()?
+                .into_iter()
+                .filter(|s| !declared_slugs.contains(&crate::skills::derive_source_slug(&s.source)))
+                .map(|s| s.entity_name)
+                .collect();
+            if !stale.is_empty() {
+                info!("Removing {} skills from undeclared sources", stale.len());
+                backend.remove_skills(stale)?;
+            }
+
+            let skills_dir = config.resolved_path(&paths.root);
+            let written = crate::skills::materialize_skills(backend, &skills_dir, &desired)?;
+            info!(
+                "Synced {} skills into {} ({} written, {} removed)",
+                desired.len(),
+                skills_dir.display(),
+                written.written.len(),
+                written.removed.len()
+            );
         }
         Some(SkillsCommands::Update { source }) => {
             let skills = backend.list_skills()?;

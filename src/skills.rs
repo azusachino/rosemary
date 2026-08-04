@@ -10,6 +10,24 @@ pub enum SelectionMode {
     Interactive,
 }
 
+/// What one source install changed in the graph.
+#[derive(Debug, Default)]
+pub struct InstallOutcome {
+    /// Entity names installed or refreshed.
+    pub installed: Vec<String>,
+    /// Entity names dropped because the selection no longer covers them.
+    pub pruned: Vec<String>,
+}
+
+/// What one sync changed on disk.
+#[derive(Debug, Default)]
+pub struct MaterializeOutcome {
+    /// Skill directories created or rewritten.
+    pub written: Vec<String>,
+    /// Skill directories removed because the config no longer declares them.
+    pub removed: Vec<String>,
+}
+
 pub fn parse_frontmatter(content: &str) -> Option<(Option<String>, Option<String>)> {
     let fm = crate::frontmatter::parse(content)?;
     Some((
@@ -136,7 +154,7 @@ pub fn install_skills_from_dir<S: crate::api::SkillStore>(
     mode: SelectionMode,
     is_tty: bool,
     prune: bool,
-) -> Result<()> {
+) -> Result<InstallOutcome> {
     let mut parsed_skills = Vec::new();
     let mut skill_contents = HashMap::new();
     for entry in WalkDir::new(dir_path)
@@ -156,6 +174,7 @@ pub fn install_skills_from_dir<S: crate::api::SkillStore>(
     }
     let selected_names = resolve_selection(&parsed_skills, mode, is_tty)?;
     let slug = derive_source_slug(source);
+    let mut outcome = InstallOutcome::default();
     if prune {
         let fresh: std::collections::HashSet<String> = selected_names
             .iter()
@@ -168,7 +187,8 @@ pub fn install_skills_from_dir<S: crate::api::SkillStore>(
             .map(|s| s.entity_name)
             .collect::<Vec<_>>();
         if !orphans.is_empty() {
-            store.remove_skills(orphans)?;
+            store.remove_skills(orphans.clone())?;
+            outcome.pruned = orphans;
         }
     }
     for name in selected_names {
@@ -180,15 +200,91 @@ pub fn install_skills_from_dir<S: crate::api::SkillStore>(
             .find(|(n, _)| n == &name)
             .map(|(_, d)| d.clone())
             .unwrap_or_default();
+        let entity_name = crate::normalize::normalize_key(&format!("skill:{}:{}", slug, name));
         store.upsert_skill(crate::api::SkillRecord {
-            entity_name: crate::normalize::normalize_key(&format!("skill:{}:{}", slug, name)),
+            entity_name: entity_name.clone(),
             body,
             source: source.to_string(),
             version: version.to_string(),
             description,
         })?;
+        outcome.installed.push(entity_name);
     }
-    Ok(())
+    Ok(outcome)
+}
+
+/// The on-disk directory for a skill entity: `skill:<slug>:<name>` becomes
+/// `<slug>@<name>`. Returns `None` for anything that is not a skill entity.
+///
+/// Both halves are slugified to lowercase kebab-case, so a frontmatter name
+/// like `Verification Before Completion` lands in a canonical directory rather
+/// than carrying its display capitalisation onto the filesystem.
+pub fn skill_dir_name(entity_name: &str) -> Option<String> {
+    let rest = entity_name.strip_prefix("skill:")?;
+    let (slug, name) = rest.split_once(':')?;
+    if slug.is_empty() || name.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{}@{}",
+        crate::normalize::slugify(slug),
+        crate::normalize::slugify(name)
+    ))
+}
+
+/// Write `desired` out as `<dir>/<slug>@<name>/SKILL.md`, then remove every
+/// other `<slug>@<name>` directory under `dir`.
+///
+/// Pruning is deliberately scoped to the `@` naming convention: directories
+/// Asobi did not write — a hand-authored skill, a vendored upstream checkout —
+/// have no `@` in their name and are never touched.
+pub fn materialize_skills<S: crate::api::SkillStore>(
+    store: &S,
+    dir: &Path,
+    desired: &[String],
+) -> Result<MaterializeOutcome> {
+    let mut outcome = MaterializeOutcome::default();
+    let wanted: std::collections::HashSet<String> =
+        desired.iter().filter_map(|e| skill_dir_name(e)).collect();
+
+    std::fs::create_dir_all(dir)?;
+
+    for entity in desired {
+        let Some(dir_name) = skill_dir_name(entity) else {
+            continue;
+        };
+        let body = store
+            .skill_body(entity)?
+            .ok_or_else(|| anyhow!("Skill '{}' has no body to write", entity))?;
+        let skill_dir = dir.join(&dir_name);
+        let file = skill_dir.join("SKILL.md");
+        // Leave an already-current file alone so a no-op sync does not churn
+        // mtimes that file watchers key off.
+        if std::fs::read_to_string(&file).is_ok_and(|existing| existing == body) {
+            continue;
+        }
+        std::fs::create_dir_all(&skill_dir)?;
+        std::fs::write(&file, body)?;
+        outcome.written.push(dir_name);
+    }
+
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if name.contains('@') && !wanted.contains(&name) {
+            std::fs::remove_dir_all(entry.path())?;
+            outcome.removed.push(name);
+        }
+    }
+
+    outcome.written.sort();
+    outcome.removed.sort();
+    Ok(outcome)
 }
 
 #[cfg(test)]
@@ -459,6 +555,92 @@ mod tests {
         }
 
         assert_eq!(storage.list_skills().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_skill_dir_name() {
+        assert_eq!(
+            skill_dir_name("skill:obra-superpowers:writing-plans").as_deref(),
+            Some("obra-superpowers@writing-plans")
+        );
+        // A display-cased frontmatter name is canonicalised, not carried through.
+        assert_eq!(
+            skill_dir_name("skill:obra-superpowers:Verification-Before-Completion").as_deref(),
+            Some("obra-superpowers@verification-before-completion")
+        );
+        assert_eq!(skill_dir_name("obra-superpowers:writing-plans"), None);
+        assert_eq!(skill_dir_name("skill:no-name-part"), None);
+    }
+
+    #[test]
+    fn test_materialize_writes_and_prunes_only_owned_dirs() {
+        use tempfile::tempdir;
+        let src_dir = tempdir().unwrap();
+        let src = src_dir.path();
+        std::fs::write(
+            src.join("alpha.md"),
+            "---\nname: alpha\ndescription: a\n---\nalpha body\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join("beta.md"),
+            "---\nname: beta\ndescription: b\n---\nbeta body\n",
+        )
+        .unwrap();
+
+        let db_dir = tempdir().unwrap();
+        unsafe {
+            std::env::set_var(
+                crate::paths::ENV_DATABASE_URL,
+                db_dir.path().join("test.db").to_str().unwrap(),
+            );
+        }
+        let storage = Storage::open_default().unwrap();
+        let source = src.to_str().unwrap();
+
+        let outcome =
+            install_skills_from_dir(&storage, src, source, "v1", SelectionMode::All, false, true)
+                .unwrap();
+        assert_eq!(outcome.installed.len(), 2);
+
+        let entity = |suffix: &str| -> String {
+            outcome
+                .installed
+                .iter()
+                .find(|e| e.ends_with(suffix))
+                .unwrap()
+                .clone()
+        };
+        let alpha_dir = skill_dir_name(&entity(":alpha")).unwrap();
+        let beta_dir = skill_dir_name(&entity(":beta")).unwrap();
+
+        let out_dir = tempdir().unwrap();
+        let out = out_dir.path();
+        // A vendored checkout and a hand-written note: neither has an `@`, so
+        // neither is ours to delete.
+        std::fs::create_dir(out.join("vendored-upstream")).unwrap();
+        std::fs::write(out.join("README.md"), "mine").unwrap();
+
+        let written = materialize_skills(&storage, out, &outcome.installed).unwrap();
+        assert_eq!(written.written.len(), 2);
+        assert!(written.removed.is_empty());
+        assert_eq!(
+            std::fs::read_to_string(out.join(&alpha_dir).join("SKILL.md")).unwrap(),
+            "---\nname: alpha\ndescription: a\n---\nalpha body\n"
+        );
+
+        // Re-running with the same desired set is a no-op on disk.
+        let again = materialize_skills(&storage, out, &outcome.installed).unwrap();
+        assert!(again.written.is_empty());
+        assert!(again.removed.is_empty());
+
+        // Narrowing the desired set removes only the dropped skill.
+        let narrowed = materialize_skills(&storage, out, &[entity(":alpha")]).unwrap();
+        assert_eq!(narrowed.removed, vec![beta_dir.clone()]);
+        assert!(out.join(&alpha_dir).is_dir());
+        assert!(!out.join(&beta_dir).exists());
+        assert!(out.join("vendored-upstream").is_dir());
+        assert!(out.join("README.md").is_file());
     }
 
     #[test]

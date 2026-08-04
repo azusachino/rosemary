@@ -8,5 +8,14 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.4",
+    "ruff>=0.16.0",
 ]
+
+[tool.ruff]
+# Declared, not inherited. Without a `[tool.ruff]` table here, ruff walks up out
+# of the repo and adopts whatever config it finds in a parent directory — which
+# silently reformatted this tree to width 100 when the repo was checked out
+# inside a workspace that sets one. 88 is ruff's own default; stating it keeps
+# the result identical whether the repo is standalone or vendored.
+line-length = 88
+

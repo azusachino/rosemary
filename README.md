@@ -6,7 +6,7 @@
 
 Keep memory, track session state, and share context across conversations — stored in a local, single-file SQLite database.
 
-[![CI](https://github.com/azusachino/asobi/actions/workflows/ci.yml/badge.svg)](https://github.com/azusachino/asobi/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/tag/azusachino/asobi?label=release&sort=semver)](https://github.com/azusachino/asobi/releases) [![License: MIT](https://img.shields.io/github/license/azusachino/asobi)](LICENSE) [![Built with Nix](https://img.shields.io/badge/built%20with-nix-5277C3?logo=nixos&logoColor=white)](https://nixos.org) [![Rust](https://img.shields.io/badge/rust-2024-orange?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![CI](https://github.com/azusachino/asobi/actions/workflows/ci.yml/badge.svg)](https://github.com/azusachino/asobi/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/tag/azusachino/asobi?label=release&sort=semver)](https://github.com/azusachino/asobi/releases) [![License: MIT](https://img.shields.io/github/license/azusachino/asobi)](LICENSE) [![Rust](https://img.shields.io/badge/rust-2024-orange?logo=rust&logoColor=white)](https://www.rust-lang.org)
 
 [![crates.io](https://img.shields.io/crates/v/asobi.svg)](https://crates.io/crates/asobi) [![Downloads](https://img.shields.io/crates/d/asobi.svg)](https://crates.io/crates/asobi) [![docs.rs](https://img.shields.io/docsrs/asobi)](https://docs.rs/asobi) [![Code of Conduct](https://img.shields.io/badge/code%20of%20conduct-contributor%20covenant-4baaaa.svg)](CODE_OF_CONDUCT.md) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -23,7 +23,7 @@ Keep memory, track session state, and share context across conversations — sto
 - **Fast search** — `search` over SQLite FTS5 (BM25 relevance, porter stemming) with a substring fallback, plus `--where key=value` truth filters (the query term is optional).
 - **Concurrency-safe** — WAL-mode storage with bounded busy timeouts, so lead and dispatched agents can share a graph.
 - **Lazy reads** — `graph`/`search` return truths + counts; `show` returns the full body. Cheap to load, cheap on tokens.
-- **Skills** — install reusable agent instructions from a git repo or local path.
+- **Skills** — install reusable agent instructions from a git repo or local path, imperatively or by declaring a `[skills]` block in `asobi.toml` and running `skills sync`.
 
 ## 🏗️ Architecture
 
@@ -88,6 +88,7 @@ asobi rm-obs "my-project" 1 --id
 - `asobi new <name> <type> --obs "..."` / `obs <name> "..."` / `update-obs <name> <old/id> <new> [--id]` / `rm-obs <name> <content/id> [--id]` — manage observations (supports updates and deletions by unique sequential IDs).
 - `asobi truth <name> <key> <value>` / `rm-truth <name> <key>` / `history <name> [key]` — manage truths and read their change history (overwrites are archived with valid-time; history is opt-in and never shown in `graph`/`search`/`show`).
 - `asobi skills install <src> --all` / `update` / `skills` / `skills show <name>` — manage skills (`--all` and `update` sync, pruning skills dropped upstream; `--select` is additive).
+- `asobi skills sync` — reconcile installed skills with the `[skills]` block in `asobi.toml`, and write each one to `.agents/skills/<source-slug>@<skill-name>/SKILL.md`.
 - `asobi stats` / `purge` / `export -o graph.json` / `import graph.json` / `reset` — inspect & manage.
 - `asobi backup` / `restore <snapshot> [--force]` — full-fidelity SQLite backups; see the [usage guide](docs/usage.md#backup-restore-and-portable-export).
 
@@ -99,7 +100,8 @@ See the [Running in Sandboxed Environments](docs/usage.md#running-in-sandboxed-e
 
 ## 🛠️ Development
 
-- **Task runner**: `make` (Nix-wrapped). `make check` is the quality gate: rustfmt, Prettier, Ruff, Clippy with `-D warnings`, Rust tests, storage-boundary checks, and CLI verification.
+- **Toolchain**: `mise install` (or `make init`) provisions the pinned Rust, uv, bun, and ruff from `.mise.toml`. CI and release builds read the same file, so local and CI resolve identical versions.
+- **Task runner**: `make`. `make check` is the quality gate: rustfmt, Prettier, Ruff, Clippy with `-D warnings`, Rust tests, storage-boundary checks, and CLI verification.
 - **Rust quality standard**: keep code rustfmt-clean, introduce no Clippy warnings, preserve single-threaded test isolation, and add regression coverage for behavior changes. Run `make check` before commits.
 - **Coverage**: with `cargo-tarpaulin` installed, run `cargo tarpaulin --out Html --output-dir coverage` and open `coverage/index.html`.
 - **Benchmarks**: run `make bench`; use [performance profiling](docs/benchmarks/profiling.md) for Criterion baselines, DHAT allocations, and SQL plans.

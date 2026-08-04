@@ -16,7 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PATHS = (ROOT / "src", ROOT / "tests", ROOT / "benches")
-PROVIDER_RE = re.compile(r"\b(?:turso|libsql|sqlx|TursoStore|LibsqlStore)\b", re.I)
+PROVIDER_RE = re.compile(
+    r"\b(?:turso|libsql|sqlx|TursoStore|LibsqlStore)\b", re.IGNORECASE
+)
 ALLOW_MARKER = "storage-boundary: provider-test"
 
 

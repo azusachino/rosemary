@@ -14,6 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: jdx/mise-action@v2
       - name: Run checks
-        run: nix develop -c make check
+        run: make check

@@ -16,7 +16,6 @@ from pathlib import Path
 
 import fastjsonschema
 
-
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "target" / "debug" / "asobi"
 _SCHEMAS: dict[str, dict] = {}
@@ -28,10 +27,12 @@ _SCHEMA_FORMATS = {
 }
 
 
-def run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def run(
+    args: list[str], env: dict[str, str], cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [str(BIN), *args],
-        cwd=ROOT,
+        cwd=cwd or ROOT,
         env=env,
         text=True,
         capture_output=True,
@@ -47,11 +48,11 @@ def run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str
 
 
 def run_expect_failure(
-    args: list[str], env: dict[str, str]
+    args: list[str], env: dict[str, str], cwd: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [str(BIN), *args],
-        cwd=ROOT,
+        cwd=cwd or ROOT,
         env=env,
         text=True,
         capture_output=True,
@@ -382,6 +383,7 @@ def main() -> None:
 
     batch_and_json_checks()
     skills_checks()
+    skills_sync_checks()
     agent_feature_checks()
     task_checks()
     scoped_export_checks()
@@ -663,6 +665,78 @@ def skills_checks() -> None:
             no_git_env,
         )
         assert "git" in no_git.stderr.lower()
+
+
+def skills_sync_checks() -> None:
+    """End-to-end coverage for declarative `skills sync`.
+
+    The project root holds the `asobi.toml` that declares the sources, so the
+    CLI runs with `cwd` set there rather than under `ASOBI_HOME` — sync reads
+    the discovered config file, which `ASOBI_HOME` deliberately bypasses.
+    """
+    with tempfile.TemporaryDirectory(prefix="asobi-skills-sync-") as tmp:
+        root = Path(tmp)
+        env = os.environ.copy()
+        env.pop("ASOBI_HOME", None)
+        env["ASOBI_DATABASE_URL"] = str(root / "asobi.db")
+
+        src = root / "src-skills"
+        src.mkdir()
+        for name in ("alpha", "beta"):
+            (src / f"{name}.md").write_text(
+                f"---\nname: {name}\ndescription: {name} skill\n---\n{name} body\n"
+            )
+
+        project = root / "project"
+        project.mkdir()
+        config = project / "asobi.toml"
+        config.write_text(
+            "data_dir = '.asobi/data'\n\n"
+            "[skills]\n"
+            "path = '.agents/skills'\n\n"
+            "[[skills.source]]\n"
+            f"url = '{src}'\n"
+            "select = ['alpha']\n"
+        )
+
+        skills_dir = project / ".agents" / "skills"
+        # A vendored source checkout has no `@` in its name and must survive.
+        (skills_dir / "vendored-upstream").mkdir(parents=True)
+
+        run(["skills", "sync"], env, cwd=project)
+
+        written = list(skills_dir.glob("*@alpha/SKILL.md"))
+        assert len(written) == 1, f"expected one materialised skill, got {written}"
+        assert "alpha body" in written[0].read_text()
+        assert not list(skills_dir.glob("*@beta")), "unselected skill was written"
+        assert (skills_dir / "vendored-upstream").is_dir()
+
+        listed = run(["skills"], env, cwd=project).stdout
+        assert "alpha" in listed
+        assert "beta" not in listed
+
+        # Widening the selection installs and materialises the new skill.
+        config.write_text(
+            config.read_text().replace(
+                "select = ['alpha']", "select = ['alpha', 'beta']"
+            )
+        )
+        run(["skills", "sync"], env, cwd=project)
+        assert list(skills_dir.glob("*@beta/SKILL.md"))
+
+        # Dropping the only source empties the graph and reclaims the directory.
+        config.write_text(
+            "data_dir = '.asobi/data'\n\n[skills]\npath = '.agents/skills'\n"
+        )
+        empty = run_expect_failure(["skills", "sync"], env, cwd=project)
+        assert "no `[[skills.source]]`" in empty.stderr
+
+        # An undeclared selection is rejected before anything is applied.
+        config.write_text(
+            f"data_dir = '.asobi/data'\n\n[[skills.source]]\nurl = '{src}'\n"
+        )
+        neither = run_expect_failure(["skills", "sync"], env, cwd=project)
+        assert "neither" in neither.stderr
 
 
 def task_checks() -> None:

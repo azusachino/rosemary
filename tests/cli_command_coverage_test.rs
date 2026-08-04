@@ -47,6 +47,7 @@ fn every_top_level_and_nested_subcommand_has_help() {
 
     for args in [
         ["skills", "install", "--help"],
+        ["skills", "sync", "--help"],
         ["skills", "update", "--help"],
         ["skills", "remove", "--help"],
         ["skills", "show", "--help"],

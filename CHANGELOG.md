@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.6.2 — Declarative skill sync
+
+### Added
+
+- `asobi skills sync` reconciles installed skills with a `[skills]` block in the discovered `asobi.toml`, treating the config as the whole truth: declared sources are installed or refreshed, unselected skills are pruned, and skills from undeclared sources are removed.
+- Selected skills are materialised to disk at `<path>/<source-slug>@<skill-name>/SKILL.md` alongside the graph copy, so agents can read them off the filesystem. Both halves of the directory name are slugified to lowercase kebab-case. `path` defaults to `.agents/skills`, relative to the declaring `asobi.toml`. On-disk pruning is scoped to the `@` naming convention, leaving vendored checkouts and hand-authored skills untouched.
+
+### Changed
+
+- `AsobiPaths` now carries the discovered workspace `root` and `config_file`, so project-relative content paths resolve consistently regardless of the working directory.
+- `install_skills_from_dir` reports what it installed and pruned instead of returning unit.
+
+### Tooling
+
+- Tool versions (rust, uv, bun, ruff) are pinned in `.mise.toml`; `make init` provisions them and both workflows resolve the same file, so local and CI no longer drift. `flake.nix` and `flake.lock` are removed.
+- `[tool.ruff]` is declared rather than inherited: without it ruff walks up out of the repo and adopts a parent directory's config, which reformatted the tree to width 100 when checked out inside such a workspace. Ruff 0.16 also widens the default rule set from 118 rules to 826.
+
+### Verification
+
+`make check` passes, including storage-boundary checks, Clippy, Rust tests, CLI integration checks, use cases, and benchmark compilation.
+
 ## v0.6.1 — Lean agent reads and safe retention
 
 ### Added

@@ -16,6 +16,13 @@ pub struct AsobiPaths {
     pub topics_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub observation_limit: Option<usize>,
+    /// The directory the workspace was discovered from: the `asobi.toml`'s
+    /// directory, the `.asobi/` parent, or the starting directory under XDG.
+    /// Relative paths that describe project content — as opposed to state —
+    /// anchor here.
+    pub root: PathBuf,
+    /// The discovered `asobi.toml`, when one drove the resolution.
+    pub config_file: Option<PathBuf>,
 }
 
 pub const ENV_ASOBI_HOME: &str = "ASOBI_HOME";
@@ -82,8 +89,10 @@ impl AsobiPaths {
                 cache_dir: root.join("caches"),
                 data_dir: root.clone(),
                 config_dir: root.clone(),
-                topics_dir: root,
+                topics_dir: root.clone(),
                 observation_limit: None,
+                root,
+                config_file: None,
             };
         }
 
@@ -91,8 +100,10 @@ impl AsobiPaths {
             && let Ok(content) = std::fs::read_to_string(&config_path)
             && let Ok(conf) = toml::from_str::<AsobiConfig>(&content)
         {
-            let anchor = config_path.parent().unwrap_or(Path::new("."));
-            return Self::from_config(conf, anchor);
+            let anchor = config_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            let mut paths = Self::from_config(conf, &anchor);
+            paths.config_file = Some(config_path);
+            return paths;
         }
 
         if let Some(local_root) = find_upwards(start, ".asobi", true) {
@@ -102,6 +113,11 @@ impl AsobiPaths {
                 topics_dir: local_root.join("topics"),
                 cache_dir: local_root.join("caches"),
                 observation_limit: None,
+                root: local_root
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| start.to_path_buf()),
+                config_file: None,
             };
         }
 
@@ -112,6 +128,8 @@ impl AsobiPaths {
                 topics_dir: x.topics_dir,
                 cache_dir: x.cache_dir,
                 observation_limit: None,
+                root: start.to_path_buf(),
+                config_file: None,
             },
             None => Self {
                 data_dir: PathBuf::from(".asobi/data"),
@@ -119,6 +137,8 @@ impl AsobiPaths {
                 topics_dir: PathBuf::from(".asobi/topics"),
                 cache_dir: PathBuf::from(".asobi/caches"),
                 observation_limit: None,
+                root: start.to_path_buf(),
+                config_file: None,
             },
         }
     }
@@ -143,6 +163,8 @@ impl AsobiPaths {
             data_dir,
             cache_dir,
             observation_limit: conf.observation_limit,
+            root: anchor.to_path_buf(),
+            config_file: None,
         }
     }
 
