@@ -12,6 +12,11 @@
 - `AsobiPaths` now carries the discovered workspace `root` and `config_file`, so project-relative content paths resolve consistently regardless of the working directory.
 - `install_skills_from_dir` reports what it installed and pruned instead of returning unit.
 
+### Tooling
+
+- Tool versions (rust, uv, bun, ruff) are pinned in `.mise.toml`; `make init` provisions them and both workflows resolve the same file, so local and CI no longer drift. `flake.nix` and `flake.lock` are removed.
+- `[tool.ruff]` is declared rather than inherited: without it ruff walks up out of the repo and adopts a parent directory's config, which reformatted the tree to width 100 when checked out inside such a workspace. Ruff 0.16 also widens the default rule set from 118 rules to 826.
+
 ### Verification
 
 `make check` passes, including storage-boundary checks, Clippy, Rust tests, CLI integration checks, use cases, and benchmark compilation.

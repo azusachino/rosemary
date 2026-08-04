@@ -73,6 +73,8 @@ config_dir = ".asobi/config"
 topics_dir = ".asobi/topics"
 ```
 
+An optional `[skills]` block in the same file declares the skill set that `asobi skills sync` reconciles — see [Declare skills in `asobi.toml`](#common-workflows).
+
 Path resolution order at runtime: project-local `asobi.toml` → project-local `.asobi/` → XDG. Both `init` modes are idempotent.
 
 Add `.asobi/` to `.gitignore`; the `asobi.toml` itself can be checked in.

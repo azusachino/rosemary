@@ -395,11 +395,15 @@ asobi truth "<project>:session" "status" "IN_PROGRESS"
 .asobi/
   data/
     asobi.db        # SQLite: entities, observations, truths, relations, skills, and FTS5 index
-  caches/              # Persistent shallow clones of git skill sources (skills install/update)
+  caches/              # Persistent shallow clones of git skill sources (skills install/update/sync)
     <slug>/
   topics/              # Markdown snapshots synced by `compact`
     <slug>.md
     sessions/          # Session files pruned by compact --older-than
+
+.agents/skills/        # Skills written by `skills sync` (path is configurable)
+  <slug>@<name>/
+    SKILL.md
 ```
 
 The user-level (XDG) workspace mirrors this exact tree under a single root, `$XDG_DATA_HOME/asobi/` (default `~/.local/share/asobi/`), honoring `XDG_DATA_HOME` on every platform — macOS included.
@@ -411,6 +415,8 @@ data_dir   = ".asobi/data"
 config_dir = ".asobi/config"
 topics_dir = ".asobi/topics"
 ```
+
+An optional `[skills]` block in the same file declares the skill set that `skills sync` reconciles — see [Skills Subsystem](#skills-subsystem).
 
 ---
 

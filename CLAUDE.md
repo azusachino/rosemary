@@ -4,13 +4,14 @@ Persistent knowledge-graph CLI for humans and AI agents. Asobi 0.6 stores entiti
 
 ## Stack and layout
 
-Rust 2024, Clap, tracing, rusqlite with bundled SQLite/FTS5, and Python scripts run through `uv`.
+Rust 2024, Clap, tracing, rusqlite with bundled SQLite/FTS5, and Python scripts run through `uv`. Tool versions are pinned in `.mise.toml`; `make init` provisions them, and CI resolves the same file.
 
 - `src/main.rs` — thin process entry point
 - `src/cli/` — command parsing, routing, output, skills, and runtime setup
 - `src/api/v2.rs` — backend-neutral synchronous capability traits
 - `src/storage/sqlite.rs` — schema, FTS5, graph CRUD, transactions, backup/restore
 - `src/tasks.rs` — durable task planning, dispatch, sync, and close workflows
+- `src/skills.rs` / `src/skills_config.rs` — skill parsing and install, and the declarative `[skills]` block that `skills sync` reconciles
 - `src/compact.rs` — graph-to-Markdown topic projection
 - `tests/` — contract, CLI, edge-case, and multi-process verification
 - `benches/` — graph, SQLite, task, allocation, and SQL-plan benchmarks
