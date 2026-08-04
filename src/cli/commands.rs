@@ -247,6 +247,8 @@ pub(crate) enum SkillsCommands {
         #[arg(long, num_args = 1..)]
         select: Option<Vec<String>>,
     },
+    /// Reconcile installed skills with the `[skills]` block in `asobi.toml`
+    Sync,
     /// Update installed skills from their sources
     Update {
         /// Specific source URL or slug to update (updates all if omitted)

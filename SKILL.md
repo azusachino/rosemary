@@ -125,6 +125,30 @@ asobi skills install <SOURCE> [--all | --select <NAME>...]
 Install skills from a local path or git repository. Pick with `--all`, `--select <NAME>...`, or neither — which prompts an interactive numbered picker (TTY required; otherwise it errors asking for a flag). Git sources are shallow-cloned to a reused cache under `.asobi/caches/<slug>`. Frontmatter gives the metadata (name falls back to the file/dir name); the body is stored as graph-backed skill data. `--all` is a full **sync**: skills previously installed from the source but no longer present upstream (deleted or renamed) are pruned. `--select` and the interactive picker stay purely additive.
 
 ```
+asobi skills sync
+```
+
+Reconcile the installed skills with the `[skills]` block in the discovered `asobi.toml`. The config is the whole truth: declared skills are installed or refreshed, skills a source no longer selects are pruned, and skills from sources the config no longer names are removed entirely. Every declaration is validated before anything is applied, so a typo in the last source cannot leave a half-applied sync.
+
+Each selected skill is written to disk as well as into the graph, at `<path>/<source-slug>@<skill-name>/SKILL.md` — so an agent can read the skill from the filesystem while the graph stays the store of record. Both halves of the directory name are slugified to lowercase kebab-case, so a display-cased frontmatter name like `Verification Before Completion` lands at `obra-superpowers-skills@verification-before-completion/`. `path` defaults to `.agents/skills`, relative to the `asobi.toml` that declares it. Pruning on disk is scoped to the `@` naming convention: a directory without `@` in its name — a hand-authored skill, a vendored upstream checkout — is never touched.
+
+```toml
+# asobi.toml
+[skills]
+path = ".agents/skills"          # optional; this is the default
+
+[[skills.source]]
+url = "https://github.com/obra/superpowers"
+select = ["writing-plans", "verification-before-completion"]
+
+[[skills.source]]
+url = "../local/skill-repo"
+all = true
+```
+
+Each source declares exactly one of `all = true` or `select = [...]`; neither is an error, since a declarative sync cannot fall back to the interactive picker. `sync` needs a discoverable `asobi.toml` — `ASOBI_HOME` bypasses config discovery, so it bypasses `sync` too.
+
+```
 asobi skills update [SOURCE]
 ```
 

@@ -202,6 +202,23 @@ asobi skills update
 asobi skills remove asobi-skills
 ```
 
+**Declare skills in `asobi.toml` and reconcile them:**
+
+```toml
+[skills]
+path = ".agents/skills"          # optional; this is the default
+
+[[skills.source]]
+url = "https://github.com/azusachino/asobi-skills"
+select = ["writing-plans", "code-review"]
+```
+
+```bash
+asobi skills sync
+```
+
+`sync` treats the config as the whole truth: it installs what is declared, prunes what is not, and writes each selected skill to `<path>/<source-slug>@<skill-name>/SKILL.md` so agents can read it off the filesystem. Directories without `@` in the name — vendored checkouts, hand-written skills — are left alone. Declare exactly one of `all = true` or `select = [...]` per source.
+
 **Coordinate durable task work:**
 
 ```bash

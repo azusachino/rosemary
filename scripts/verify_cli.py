@@ -28,10 +28,12 @@ _SCHEMA_FORMATS = {
 }
 
 
-def run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def run(
+    args: list[str], env: dict[str, str], cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [str(BIN), *args],
-        cwd=ROOT,
+        cwd=cwd or ROOT,
         env=env,
         text=True,
         capture_output=True,
@@ -47,11 +49,11 @@ def run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str
 
 
 def run_expect_failure(
-    args: list[str], env: dict[str, str]
+    args: list[str], env: dict[str, str], cwd: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [str(BIN), *args],
-        cwd=ROOT,
+        cwd=cwd or ROOT,
         env=env,
         text=True,
         capture_output=True,
@@ -80,9 +82,7 @@ def validate_response(args: list[str], env: dict[str, str], command: str) -> dic
 
 def command_schema(command: str, env: dict[str, str]) -> dict:
     if command not in _SCHEMAS:
-        _SCHEMAS[command] = json.loads(
-            run(["schema", "--command", command], env).stdout
-        )
+        _SCHEMAS[command] = json.loads(run(["schema", "--command", command], env).stdout)
     return _SCHEMAS[command]
 
 
@@ -219,9 +219,7 @@ def main() -> None:
         run(["obs", suspicious_name, suspicious_observation], env)
         suspicious = graph(["show", suspicious_name], env)
         assert entity_names(suspicious) == {normalized_suspicious_name}
-        assert observations(suspicious, normalized_suspicious_name) == [
-            suspicious_observation
-        ]
+        assert observations(suspicious, normalized_suspicious_name) == [suspicious_observation]
 
         injected = graph(["search", "drop"], env)
         assert normalized_suspicious_name in entity_names(injected)
@@ -286,9 +284,7 @@ def main() -> None:
         # relations (regression guard for JSON round-trip fidelity).
         run(["link", "project-a", "project-a:session", "part_of"], env)
         pre_reset = graph(["graph"], env)
-        pre_rels = {
-            (r["from"], r["to"], r["relationType"]) for r in pre_reset["relations"]
-        }
+        pre_rels = {(r["from"], r["to"], r["relationType"]) for r in pre_reset["relations"]}
         assert ("project-a", "project-a:session", "part_of") in pre_rels
 
         export_file = str(Path(tmp) / "backup.json")
@@ -333,9 +329,7 @@ def main() -> None:
             live_connection.execute(
                 "CREATE TABLE IF NOT EXISTS restore_sidecar_marker (value TEXT)"
             )
-            live_connection.execute(
-                "INSERT INTO restore_sidecar_marker(value) VALUES ('stale')"
-            )
+            live_connection.execute("INSERT INTO restore_sidecar_marker(value) VALUES ('stale')")
         assert Path(f"{live_db}-wal").exists()
         assert Path(f"{live_db}-shm").exists()
         # `with` only commits/rolls back; the connection itself stays open and
@@ -347,8 +341,7 @@ def main() -> None:
         physically_restored = graph(["graph"], env)
         assert entity_names(physically_restored) == entity_names(restored_graph)
         assert {
-            (r["from"], r["to"], r["relationType"])
-            for r in physically_restored["relations"]
+            (r["from"], r["to"], r["relationType"]) for r in physically_restored["relations"]
         } == pre_rels
         assert truths(physically_restored, "project-a") == {"edition": "2024"}
 
@@ -367,9 +360,7 @@ def main() -> None:
         invalid_source = Path(tmp) / "not-asobi.db"
         with sqlite3.connect(invalid_source) as invalid_db:
             invalid_db.execute("CREATE TABLE unrelated (value TEXT)")
-        invalid_restore = run_expect_failure(
-            ["restore", str(invalid_source), "--force"], env
-        )
+        invalid_restore = run_expect_failure(["restore", str(invalid_source), "--force"], env)
         assert "not an Asobi SQLite database" in invalid_restore.stderr
 
     with tempfile.TemporaryDirectory(prefix="asobi-corrupt-") as tmp:
@@ -382,6 +373,7 @@ def main() -> None:
 
     batch_and_json_checks()
     skills_checks()
+    skills_sync_checks()
     agent_feature_checks()
     task_checks()
     scoped_export_checks()
@@ -493,15 +485,11 @@ def scoped_export_checks() -> None:
         assert "UserPreferences" not in scoped
 
         # --rationale pulls exactly one extends hop off the cited leaf.
-        with_rationale = entity_names(
-            graph(["export", "--scope", "proj:a", "--rationale"], env)
-        )
+        with_rationale = entity_names(graph(["export", "--scope", "proj:a", "--rationale"], env))
         assert "proj:decision:root" in with_rationale
 
         # Multiple roots union without bridging through the project node.
-        both = entity_names(
-            graph(["export", "--scope", "proj:a", "--scope", "proj:b"], env)
-        )
+        both = entity_names(graph(["export", "--scope", "proj:a", "--scope", "proj:b"], env))
         assert {"proj:a:task-1", "proj:b:task-1"}.issubset(both)
         assert "proj" not in both
 
@@ -635,9 +623,7 @@ def skills_checks() -> None:
         run(["skills", "remove", str(src)], env)
 
         # --select with an unknown name fails.
-        bad_select = run_expect_failure(
-            ["skills", "install", str(src), "--select", "ghost"], env
-        )
+        bad_select = run_expect_failure(["skills", "install", str(src), "--select", "ghost"], env)
         assert "not found" in bad_select.stderr.lower()
 
         # Edge case: local path that does not exist.
@@ -663,6 +649,72 @@ def skills_checks() -> None:
             no_git_env,
         )
         assert "git" in no_git.stderr.lower()
+
+
+def skills_sync_checks() -> None:
+    """End-to-end coverage for declarative `skills sync`.
+
+    The project root holds the `asobi.toml` that declares the sources, so the
+    CLI runs with `cwd` set there rather than under `ASOBI_HOME` — sync reads
+    the discovered config file, which `ASOBI_HOME` deliberately bypasses.
+    """
+    with tempfile.TemporaryDirectory(prefix="asobi-skills-sync-") as tmp:
+        root = Path(tmp)
+        env = os.environ.copy()
+        env.pop("ASOBI_HOME", None)
+        env["ASOBI_DATABASE_URL"] = str(root / "asobi.db")
+
+        src = root / "src-skills"
+        src.mkdir()
+        for name in ("alpha", "beta"):
+            (src / f"{name}.md").write_text(
+                f"---\nname: {name}\ndescription: {name} skill\n---\n{name} body\n"
+            )
+
+        project = root / "project"
+        project.mkdir()
+        config = project / "asobi.toml"
+        config.write_text(
+            "data_dir = '.asobi/data'\n\n"
+            "[skills]\n"
+            "path = '.agents/skills'\n\n"
+            "[[skills.source]]\n"
+            f"url = '{src}'\n"
+            "select = ['alpha']\n"
+        )
+
+        skills_dir = project / ".agents" / "skills"
+        # A vendored source checkout has no `@` in its name and must survive.
+        (skills_dir / "vendored-upstream").mkdir(parents=True)
+
+        run(["skills", "sync"], env, cwd=project)
+
+        written = list(skills_dir.glob("*@alpha/SKILL.md"))
+        assert len(written) == 1, f"expected one materialised skill, got {written}"
+        assert "alpha body" in written[0].read_text()
+        assert not list(skills_dir.glob("*@beta")), "unselected skill was written"
+        assert (skills_dir / "vendored-upstream").is_dir()
+
+        listed = run(["skills"], env, cwd=project).stdout
+        assert "alpha" in listed
+        assert "beta" not in listed
+
+        # Widening the selection installs and materialises the new skill.
+        config.write_text(
+            config.read_text().replace("select = ['alpha']", "select = ['alpha', 'beta']")
+        )
+        run(["skills", "sync"], env, cwd=project)
+        assert list(skills_dir.glob("*@beta/SKILL.md"))
+
+        # Dropping the only source empties the graph and reclaims the directory.
+        config.write_text("data_dir = '.asobi/data'\n\n[skills]\npath = '.agents/skills'\n")
+        empty = run_expect_failure(["skills", "sync"], env, cwd=project)
+        assert "no `[[skills.source]]`" in empty.stderr
+
+        # An undeclared selection is rejected before anything is applied.
+        config.write_text(f"data_dir = '.asobi/data'\n\n[[skills.source]]\nurl = '{src}'\n")
+        neither = run_expect_failure(["skills", "sync"], env, cwd=project)
+        assert "neither" in neither.stderr
 
 
 def task_checks() -> None:
@@ -724,13 +776,9 @@ def task_checks() -> None:
             )
             assert "already exists" in duplicate.stderr
 
-            dispatch = validate_response(
-                ["tasks", "dispatch", "--json"], env, "tasks-dispatch"
-            )
+            dispatch = validate_response(["tasks", "dispatch", "--json"], env, "tasks-dispatch")
             assert dispatch["status"] == "DISPATCHED"
-            not_ready = run_expect_failure(
-                ["tasks", "dispatch", dispatch["entity"]], env
-            )
+            not_ready = run_expect_failure(["tasks", "dispatch", dispatch["entity"]], env)
             assert "READY_TO_DISPATCH" in not_ready.stderr
 
             invalid_status = run_expect_failure(
@@ -754,9 +802,7 @@ def task_checks() -> None:
                 env,
                 "tasks-sync",
             )
-            closed = validate_response(
-                ["tasks", "close", epic, "--json"], env, "tasks-close"
-            )
+            closed = validate_response(["tasks", "close", epic, "--json"], env, "tasks-close")
             assert closed["status"] == "DONE"
 
 

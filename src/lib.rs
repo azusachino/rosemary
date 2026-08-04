@@ -10,6 +10,7 @@ pub mod model;
 pub mod normalize;
 pub mod paths;
 pub mod skills;
+pub mod skills_config;
 pub mod storage;
 pub mod tasks;
 pub use anyhow::{Result, anyhow, bail};

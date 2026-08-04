@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.6.2 — Declarative skill sync
+
+### Added
+
+- `asobi skills sync` reconciles installed skills with a `[skills]` block in the discovered `asobi.toml`, treating the config as the whole truth: declared sources are installed or refreshed, unselected skills are pruned, and skills from undeclared sources are removed.
+- Selected skills are materialised to disk at `<path>/<source-slug>@<skill-name>/SKILL.md` alongside the graph copy, so agents can read them off the filesystem. Both halves of the directory name are slugified to lowercase kebab-case. `path` defaults to `.agents/skills`, relative to the declaring `asobi.toml`. On-disk pruning is scoped to the `@` naming convention, leaving vendored checkouts and hand-authored skills untouched.
+
+### Changed
+
+- `AsobiPaths` now carries the discovered workspace `root` and `config_file`, so project-relative content paths resolve consistently regardless of the working directory.
+- `install_skills_from_dir` reports what it installed and pruned instead of returning unit.
+
+### Verification
+
+`make check` passes, including storage-boundary checks, Clippy, Rust tests, CLI integration checks, use cases, and benchmark compilation.
+
 ## v0.6.1 — Lean agent reads and safe retention
 
 ### Added
