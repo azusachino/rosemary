@@ -91,6 +91,185 @@ fn resolve_skill_name_fallback(path: &Path) -> String {
     }
 }
 
+/// How many link hops [`inline_local_references`] follows before giving up.
+/// Real skills reference at most one or two levels deep (`SKILL.md` ->
+/// `reference.md`); this just bounds a pathological reference chain.
+const MAX_REFERENCE_DEPTH: usize = 4;
+
+/// Targets of every `[text](target)` inline link in `content`, in source
+/// order and with duplicates kept (the caller dedupes via `visited`).
+///
+/// A hand-rolled scan rather than a markdown parser or a `regex` dependency:
+/// skills only ever link with the plain inline form, and this only needs
+/// candidate paths, not a rendered document. Reference-style links
+/// (`[text][id]`) are deliberately not matched — rare in skills, and not
+/// worth a second lookup table for.
+fn markdown_link_targets(content: &str) -> Vec<&str> {
+    let mut targets = Vec::new();
+    for (i, c) in content.char_indices() {
+        if c != '[' {
+            continue;
+        }
+        let Some(close_bracket) = content[i..].find(']') else {
+            continue;
+        };
+        let after_bracket = i + close_bracket + 1;
+        if !content[after_bracket..].starts_with('(') {
+            continue;
+        }
+        let paren_start = after_bracket + 1;
+        let Some(close_paren) = content[paren_start..].find(')') else {
+            continue;
+        };
+        // A link target may carry a trailing `"title"`; only the path matters.
+        let raw = content[paren_start..paren_start + close_paren].trim();
+        let target = raw.split_whitespace().next().unwrap_or(raw);
+        if !target.is_empty() {
+            targets.push(target);
+        }
+    }
+    targets
+}
+
+/// Inline-code-span targets in `content` that look like a path to a markdown
+/// file: single backticks, no whitespace inside, ending in `.md`/`.markdown`.
+/// Skips spans inside fenced (```` ``` ````) code blocks, since those are
+/// examples to show the reader, not live references.
+///
+/// Some skills — Anthropic's own `skill-creator` among them — mention sibling
+/// docs as prose ("see `references/schemas.md` for the schema") rather than
+/// as a markdown link. The ending-in-`.md` + no-whitespace filter is loose by
+/// itself (it would also match a *generated output* mentioned in backticks,
+/// like "produces `benchmark.md`"), so the real filter is downstream: the
+/// caller only inlines a target that resolves to a file that actually exists
+/// in the source checkout, which a generated-output mention never does.
+fn backtick_path_targets(content: &str) -> Vec<&str> {
+    let mut targets = Vec::new();
+    let mut in_fence = false;
+    for line in content.lines() {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        // Splitting on the delimiter puts every span *between* a pair of
+        // backticks at an odd index; unmatched trailing backticks just leave
+        // a final segment that is never treated as "inside".
+        for (idx, span) in line.split('`').enumerate() {
+            if idx % 2 == 0 {
+                continue;
+            }
+            let looks_like_markdown_path = span.ends_with(".md") || span.ends_with(".markdown");
+            if !span.is_empty() && !span.contains(char::is_whitespace) && looks_like_markdown_path {
+                targets.push(span);
+            }
+        }
+    }
+    targets
+}
+
+/// True for a link target worth following on disk: not an external URL, mail
+/// link, or a same-page anchor.
+fn is_local_reference(target: &str) -> bool {
+    !target.starts_with('#')
+        && !target.contains("://")
+        && !target.starts_with("mailto:")
+        && !target.starts_with("tel:")
+}
+
+/// Inline the local `.md`/`.markdown` files a skill references — via a
+/// markdown link or a backtick-quoted path — so a `SKILL.md` that is itself
+/// just a table of contents over sibling docs ships as one self-contained
+/// body. Asobi stores and materializes a single string per skill (see
+/// [`materialize_skills`]), so anything the skill needs at runtime has to
+/// live in that string — a reference file left beside `SKILL.md` in the
+/// source repo never reaches `.agents/skills/<slug>@<name>/`.
+///
+/// Only references that resolve inside `root_dir` are followed (no escaping
+/// the source checkout via `../..`), and a reference to another skill's own
+/// entry point (`SKILL.md`/`index.md`) is never inlined — that is a
+/// cross-skill reference to something installed as its own entity, not local
+/// content. `depth` bounds how many reference hops are followed; `visited`
+/// prevents cycles and re-inlining the same file reached two different ways.
+fn inline_local_references(
+    content: &str,
+    file_dir: &Path,
+    root_dir: &Path,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+    depth: usize,
+) -> String {
+    if depth == 0 {
+        return content.to_string();
+    }
+    let mut out = content.to_string();
+    let mut candidates = markdown_link_targets(content);
+    candidates.extend(backtick_path_targets(content));
+    for target in candidates {
+        if !is_local_reference(target) {
+            continue;
+        }
+        // Strip a `#fragment` before resolving; the file is what gets inlined.
+        let relative = target.split('#').next().unwrap_or(target);
+        let Ok(resolved) = file_dir.join(relative).canonicalize() else {
+            continue;
+        };
+        if !resolved.starts_with(root_dir) {
+            continue;
+        }
+        let is_markdown = resolved
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+            });
+        let is_entry_point = resolved
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| {
+                stem.eq_ignore_ascii_case("SKILL") || stem.eq_ignore_ascii_case("index")
+            });
+        if !is_markdown || is_entry_point || !visited.insert(resolved.clone()) {
+            continue;
+        }
+        let Ok(ref_content) = std::fs::read_to_string(&resolved) else {
+            continue;
+        };
+        let label = resolved
+            .strip_prefix(root_dir)
+            .unwrap_or(&resolved)
+            .display();
+        out.push_str(&format!("\n\n---\n\n<!-- inlined: {label} -->\n\n"));
+        let ref_dir = resolved.parent().unwrap_or(file_dir).to_path_buf();
+        out.push_str(&inline_local_references(
+            &ref_content,
+            &ref_dir,
+            root_dir,
+            visited,
+            depth - 1,
+        ));
+    }
+    out
+}
+
+/// Entry point for [`inline_local_references`]: canonicalizes `root_dir` once
+/// and seeds `visited` with the skill file's own path so a link back to
+/// itself is a no-op rather than a duplicate of the whole body.
+fn inline_references(content: &str, file_path: &Path, root_dir: &Path) -> String {
+    let Some(file_dir) = file_path.parent() else {
+        return content.to_string();
+    };
+    let Ok(root) = root_dir.canonicalize() else {
+        return content.to_string();
+    };
+    let mut visited = std::collections::HashSet::new();
+    if let Ok(canonical_self) = file_path.canonicalize() {
+        visited.insert(canonical_self);
+    }
+    inline_local_references(content, file_dir, &root, &mut visited, MAX_REFERENCE_DEPTH)
+}
+
 pub fn resolve_selection(
     skills: &[(String, String)],
     mode: SelectionMode,
@@ -157,22 +336,55 @@ pub fn install_skills_from_dir<S: crate::api::SkillStore>(
 ) -> Result<InstallOutcome> {
     let mut parsed_skills = Vec::new();
     let mut skill_contents = HashMap::new();
+    // Every file path that claimed each name. Real-world skill repos sometimes
+    // mirror the same skill under two tool-specific directories (e.g.
+    // `.opencode/skills/x/` and `skills/x/`) and those mirrors can genuinely
+    // diverge in content (different description, different frontmatter), so a
+    // `HashMap<String, String>` silently keeping whichever file was walked
+    // last -- and resolve_selection still returning the name twice, so the
+    // second `.remove()` further down hit an already-emptied slot -- is not
+    // safe. Collected here rather than checked eagerly, so a repo-wide name
+    // collision only blocks installing *that* name: a narrow `--select` of an
+    // unrelated, unambiguous skill in the same source still succeeds.
+    let mut skill_paths: HashMap<String, Vec<std::path::PathBuf>> = HashMap::new();
     for entry in WalkDir::new(dir_path)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file() && e.path().extension().is_some_and(|ext| ext == "md"))
     {
-        let mut content = std::fs::read_to_string(entry.path())?.replace("\r\n", "\n");
+        let content = std::fs::read_to_string(entry.path())?.replace("\r\n", "\n");
         if let Some((parsed_name, parsed_desc)) = parse_frontmatter(&content) {
             let name = parsed_name.unwrap_or_else(|| resolve_skill_name_fallback(entry.path()));
+            skill_paths
+                .entry(name.clone())
+                .or_default()
+                .push(entry.path().to_path_buf());
+            let body = inline_references(&content, entry.path(), dir_path);
             parsed_skills.push((name.clone(), parsed_desc.unwrap_or_default()));
-            skill_contents.insert(name, std::mem::take(&mut content));
+            skill_contents.insert(name, body);
         }
     }
     if parsed_skills.is_empty() {
         bail!("No valid skills found in {}", source);
     }
     let selected_names = resolve_selection(&parsed_skills, mode, is_tty)?;
+    if let Some(name) = selected_names
+        .iter()
+        .find(|n| skill_paths.get(*n).is_some_and(|paths| paths.len() > 1))
+    {
+        let paths = skill_paths[name]
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail!(
+            "skill name '{}' is declared in more than one file in {}: {} -- \
+             rename one so names stay unique",
+            name,
+            source,
+            paths
+        );
+    }
     let slug = derive_source_slug(source);
     let mut outcome = InstallOutcome::default();
     if prune {
@@ -763,5 +975,286 @@ mod tests {
 
         let sdr_row = skills.iter().find(|s| s.entity_name == sdr_entity).unwrap();
         assert_eq!(sdr_row.description, "");
+    }
+
+    #[test]
+    fn test_markdown_link_targets() {
+        let content = "See [AGENT-BRIEF.md](AGENT-BRIEF.md) and \
+             [a titled link](path/to.md \"a title\") and [anchor](#section) and \
+             [site](https://example.com) plain text with no link.";
+        assert_eq!(
+            markdown_link_targets(content),
+            vec![
+                "AGENT-BRIEF.md",
+                "path/to.md",
+                "#section",
+                "https://example.com"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_backtick_path_targets() {
+        let content = "See `references/schemas.md` for the schema. Also `grading.json` \
+             and `evidence` are just field names, and `path with space.md` doesn't count.\n\
+             ```\n\
+             this fenced `inside.md` mention must not match\n\
+             ```\n\
+             But `after-fence.md` on a normal line does.";
+        assert_eq!(
+            backtick_path_targets(content),
+            vec!["references/schemas.md", "after-fence.md"]
+        );
+    }
+
+    #[test]
+    fn test_is_local_reference() {
+        assert!(is_local_reference("reference.md"));
+        assert!(is_local_reference("../sibling/reference.md"));
+        assert!(!is_local_reference("#section"));
+        assert!(!is_local_reference("https://example.com/doc.md"));
+        assert!(!is_local_reference("mailto:you@example.com"));
+    }
+
+    #[test]
+    fn test_inline_references_pulls_in_sibling_docs() {
+        use tempfile::tempdir;
+        let root = tempdir().unwrap();
+        let skill_dir = root.path().join("triage");
+        std::fs::create_dir(&skill_dir).unwrap();
+
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: triage\ndescription: toc-style skill\n---\n\
+             # Triage\n\n## Reference docs\n\n\
+             - [AGENT-BRIEF.md](AGENT-BRIEF.md) -- how to write agent briefs\n\
+             - [OUT-OF-SCOPE.md](OUT-OF-SCOPE.md) -- rejected work log\n\n\
+             Later: post an agent brief ([AGENT-BRIEF.md](AGENT-BRIEF.md)).\n",
+        )
+        .unwrap();
+        std::fs::write(
+            skill_dir.join("AGENT-BRIEF.md"),
+            "# Agent Brief\n\nWrite briefs like this.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            skill_dir.join("OUT-OF-SCOPE.md"),
+            "# Out of Scope\n\nRejected requests live here.\n",
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        let inlined = inline_references(&content, &skill_dir.join("SKILL.md"), root.path());
+
+        assert!(inlined.contains("Write briefs like this."));
+        assert!(inlined.contains("Rejected requests live here."));
+        // Referenced twice in the source; inlined once (`visited` dedupes).
+        assert_eq!(inlined.matches("Write briefs like this.").count(), 1);
+    }
+
+    #[test]
+    fn test_inline_references_pulls_in_backtick_referenced_docs() {
+        // Mirrors Anthropic's own skill-creator, which mentions references as
+        // prose ("see `references/schemas.md`") rather than markdown links.
+        use tempfile::tempdir;
+        let root = tempdir().unwrap();
+        let skill_dir = root.path().join("skill-creator");
+        std::fs::create_dir(&skill_dir).unwrap();
+        std::fs::create_dir(skill_dir.join("references")).unwrap();
+
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: skill-creator\ndescription: toc-style skill\n---\n\
+             See `references/schemas.md` for the full schema. This step \
+             produces `benchmark.md`, which is not a file in this repo.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            skill_dir.join("references/schemas.md"),
+            "# Schemas\n\nThe JSON structures live here.\n",
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        let inlined = inline_references(&content, &skill_dir.join("SKILL.md"), root.path());
+
+        assert!(inlined.contains("The JSON structures live here."));
+        // `benchmark.md` is path-shaped but never exists on disk -- silent no-op.
+        assert!(!inlined.contains("inlined: skill-creator/benchmark.md"));
+    }
+
+    #[test]
+    fn test_inline_references_skips_path_traversal() {
+        use tempfile::tempdir;
+        let outer = tempdir().unwrap();
+        let root = outer.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(outer.path().join("secret.md"), "outside content").unwrap();
+
+        let skill_file = root.join("SKILL.md");
+        std::fs::write(
+            &skill_file,
+            "---\nname: x\n---\nSee [secret](../secret.md).\n",
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&skill_file).unwrap();
+        let inlined = inline_references(&content, &skill_file, &root);
+        assert!(!inlined.contains("outside content"));
+    }
+
+    #[test]
+    fn test_inline_references_skips_other_skill_entry_points() {
+        use tempfile::tempdir;
+        let root = tempdir().unwrap();
+        let a_dir = root.path().join("skill-a");
+        let b_dir = root.path().join("skill-b");
+        std::fs::create_dir(&a_dir).unwrap();
+        std::fs::create_dir(&b_dir).unwrap();
+
+        std::fs::write(
+            b_dir.join("SKILL.md"),
+            "---\nname: skill-b\n---\nskill b's own body\n",
+        )
+        .unwrap();
+        let a_file = a_dir.join("SKILL.md");
+        std::fs::write(
+            &a_file,
+            "---\nname: skill-a\n---\nSee also [skill-b](../skill-b/SKILL.md).\n",
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&a_file).unwrap();
+        let inlined = inline_references(&content, &a_file, root.path());
+        assert!(!inlined.contains("skill b's own body"));
+    }
+
+    #[test]
+    fn test_install_from_dir_inlines_sibling_references() {
+        use tempfile::tempdir;
+        let src_dir = tempdir().unwrap();
+        let src = src_dir.path();
+
+        std::fs::write(
+            src.join("SKILL.md"),
+            "---\nname: triage\ndescription: toc-style skill\n---\n\
+             See [AGENT-BRIEF.md](AGENT-BRIEF.md) for the brief format.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join("AGENT-BRIEF.md"),
+            "# Agent Brief\n\nWrite briefs like this.\n",
+        )
+        .unwrap();
+
+        let db_dir = tempdir().unwrap();
+        unsafe {
+            std::env::set_var(
+                crate::paths::ENV_DATABASE_URL,
+                db_dir.path().join("test.db").to_str().unwrap(),
+            );
+        }
+        let storage = Storage::open_default().unwrap();
+        let source = src.to_str().unwrap();
+
+        let outcome =
+            install_skills_from_dir(&storage, src, source, "v1", SelectionMode::All, false, true)
+                .unwrap();
+        assert_eq!(outcome.installed.len(), 1);
+
+        let body = storage.skill_body(&outcome.installed[0]).unwrap().unwrap();
+        assert!(body.contains("Write briefs like this."));
+    }
+
+    #[test]
+    fn test_install_rejects_duplicate_skill_names() {
+        use tempfile::tempdir;
+        let src_dir = tempdir().unwrap();
+        let src = src_dir.path();
+
+        // Mirrors a real pattern: the same skill name declared under two
+        // tool-specific directories, with genuinely different descriptions --
+        // picking one silently would drop the other's content.
+        std::fs::create_dir(src.join("skills")).unwrap();
+        std::fs::create_dir(src.join(".opencode")).unwrap();
+        std::fs::write(
+            src.join("skills/one.md"),
+            "---\nname: dup\ndescription: canonical copy\n---\nbody one\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join(".opencode/two.md"),
+            "---\nname: dup\ndescription: mirrored copy\n---\nbody two\n",
+        )
+        .unwrap();
+
+        let db_dir = tempdir().unwrap();
+        unsafe {
+            std::env::set_var(
+                crate::paths::ENV_DATABASE_URL,
+                db_dir.path().join("test.db").to_str().unwrap(),
+            );
+        }
+        let storage = Storage::open_default().unwrap();
+        let source = src.to_str().unwrap();
+
+        let err =
+            install_skills_from_dir(&storage, src, source, "v1", SelectionMode::All, false, true)
+                .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("dup"), "message was: {message}");
+        assert!(message.contains("one.md"), "message was: {message}");
+        assert!(message.contains("two.md"), "message was: {message}");
+    }
+
+    #[test]
+    fn test_install_select_ignores_unrelated_duplicate_names() {
+        use tempfile::tempdir;
+        let src_dir = tempdir().unwrap();
+        let src = src_dir.path();
+
+        // Same collision as above, plus one unambiguous skill elsewhere in the
+        // same source. A narrow `--select` of the unambiguous one must still
+        // succeed -- the collision only matters for the name it actually blocks.
+        std::fs::create_dir(src.join("skills")).unwrap();
+        std::fs::create_dir(src.join(".opencode")).unwrap();
+        std::fs::write(
+            src.join("skills/one.md"),
+            "---\nname: dup\ndescription: canonical copy\n---\nbody one\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join(".opencode/two.md"),
+            "---\nname: dup\ndescription: mirrored copy\n---\nbody two\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join("fine.md"),
+            "---\nname: fine\ndescription: no conflict\n---\nfine body\n",
+        )
+        .unwrap();
+
+        let db_dir = tempdir().unwrap();
+        unsafe {
+            std::env::set_var(
+                crate::paths::ENV_DATABASE_URL,
+                db_dir.path().join("test.db").to_str().unwrap(),
+            );
+        }
+        let storage = Storage::open_default().unwrap();
+        let source = src.to_str().unwrap();
+
+        let outcome = install_skills_from_dir(
+            &storage,
+            src,
+            source,
+            "v1",
+            SelectionMode::Select(vec!["fine".to_string()]),
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(outcome.installed.len(), 1);
+        assert!(outcome.installed[0].ends_with(":fine"));
     }
 }

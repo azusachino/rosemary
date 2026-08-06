@@ -213,6 +213,11 @@ path = ".agents/skills"          # optional; this is the default
 [[skills.source]]
 url = "https://github.com/azusachino/asobi-skills"
 select = ["writing-plans", "code-review"]
+
+[[skills.source]]
+url = "https://github.com/some-org/multi-tool-skills"
+select = ["some-skill"]
+subdir = "skills"                # only walk this directory of the checkout
 ```
 
 ```bash
@@ -220,6 +225,8 @@ asobi skills sync
 ```
 
 `sync` treats the config as the whole truth: it installs what is declared, prunes what is not, and writes each selected skill to `<path>/<source-slug>@<skill-name>/SKILL.md` so agents can read it off the filesystem. Directories without `@` in the name — vendored checkouts, hand-written skills — are left alone. Declare exactly one of `all = true` or `select = [...]` per source.
+
+Some sources mirror every skill across several tool-specific directories (`.opencode/`, `.kiro/`, a canonical `skills/`, ...) with the same `name:` in each copy — that collides on install, since a skill name must be unique within a source. `subdir` scopes the walk to one directory of the checkout so the mirrors are never seen; `asobi skills install <url> --subdir <path> ...` does the same for the imperative form.
 
 **Coordinate durable task work:**
 

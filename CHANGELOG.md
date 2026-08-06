@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.6.3 — Self-contained skills and reliable releases
+
+### Added
+
+- Skill install/sync now inlines a skill's local `.md`/`.markdown` references into its stored body, so a `SKILL.md` that is itself just a table of contents over sibling docs ships self-contained. Both markdown links (`[text](path)`) and backtick-quoted paths (`` `references/schemas.md` ``, the style Anthropic's own `skill-creator` uses) are followed. A reference to another skill's own entry point (`SKILL.md`/`index.md`) is never inlined — that stays a cross-skill reference to something installed as its own entity — and a link resolving outside the source checkout is never followed.
+- `--subdir <path>` on `skills install`, and a matching `subdir = "..."` field on `[[skills.source]]` in `asobi.toml`, scope the install walk to one directory of a checkout. Some sources mirror every skill across several tool-specific directories (`.opencode/`, `.kiro/`, a canonical `skills/`, ...) with the same `name:` in each copy; `subdir` avoids the mirrors entirely instead of asking install to arbitrate between diverging copies.
+
+### Fixed
+
+- A source that declares the same skill `name:` in more than one file (a real pattern: mirrored copies under different tool-specific directories) used to fail with a confusing `Content missing for skill X`. It now fails with a specific error naming every colliding file, and — for `--select` — only when the actually-selected name collides, so an unrelated, unambiguous skill in the same source still installs.
+- The release workflow's macOS binary upload had no retry, so a transient connect-timeout to `api.github.com` (observed directly in CI logs, alongside `mise-action` hitting the same timeout independently) failed the whole release. The GitHub release is now created once in `publish-crate`, and each platform's binary upload retries with backoff — `v0.6.2`'s release shipped without its macOS binary because of exactly this.
+
+### Verification
+
+Reference inlining and the duplicate-name fix were verified against real upstream skill repos (`mattpocock/skills`, `obra/superpowers`, `anthropics/skills`, `DietrichGebert/ponytail`, `addyosmani/agent-skills`, `jasonswett/llm-skills`), not just synthetic fixtures. `make check` passes: storage boundary, rustfmt, Prettier, Ruff, Clippy `-D warnings`, all Rust tests, CLI verifier, use cases, and benchmark compilation.
+
 ## v0.6.2 — Declarative skill sync
 
 ### Added

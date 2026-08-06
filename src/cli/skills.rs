@@ -32,6 +32,28 @@ fn checkout_source(source: &str, caches_dir: &std::path::Path) -> Result<Checkou
     Ok(Checkout { path, version, url })
 }
 
+/// The directory to actually walk for skills: the checkout root, or a
+/// declared subdirectory of it. Checked eagerly so a typo'd `subdir` fails
+/// with a specific message rather than the walk silently finding nothing and
+/// later erroring with the generic "No valid skills found".
+fn scoped_dir(
+    checkout_path: &std::path::Path,
+    subdir: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf> {
+    let Some(subdir) = subdir else {
+        return Ok(checkout_path.to_path_buf());
+    };
+    let scoped = checkout_path.join(subdir);
+    if !scoped.is_dir() {
+        anyhow::bail!(
+            "subdir '{}' does not exist under {}",
+            subdir.display(),
+            checkout_path.display()
+        );
+    }
+    Ok(scoped)
+}
+
 fn classify_skill_source(source: &str) -> (String, bool) {
     let mut git_url = source.to_string();
     let is_git = if source.contains("://") || source.contains("git@") {
@@ -74,8 +96,10 @@ pub(crate) fn run(
             source,
             all,
             select,
+            subdir,
         }) => {
             let checkout = checkout_source(&source, &paths.caches_dir())?;
+            let walk_dir = scoped_dir(&checkout.path, subdir.as_deref())?;
 
             let mode = if all {
                 crate::skills::SelectionMode::All
@@ -93,7 +117,7 @@ pub(crate) fn run(
 
             crate::skills::install_skills_from_dir(
                 backend,
-                &checkout.path,
+                &walk_dir,
                 &checkout.url,
                 &checkout.version,
                 mode,
@@ -134,10 +158,11 @@ pub(crate) fn run(
             for (declared, mode) in config.sources.iter().zip(selections) {
                 let checkout = checkout_source(&declared.url, &paths.caches_dir())?;
                 declared_slugs.insert(crate::skills::derive_source_slug(&checkout.url));
+                let walk_dir = scoped_dir(&checkout.path, declared.subdir.as_deref())?;
 
                 let outcome = crate::skills::install_skills_from_dir(
                     backend,
-                    &checkout.path,
+                    &walk_dir,
                     &checkout.url,
                     &checkout.version,
                     mode,

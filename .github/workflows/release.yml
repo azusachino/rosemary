@@ -30,6 +30,15 @@ jobs:
         run: cargo publish --locked --dry-run
       - name: Publish to crates.io
         run: cargo publish --locked --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Create GitHub release
+        # Created once, here, rather than by the per-OS upload step below --
+        # two matrix jobs racing to create the same release is exactly the
+        # kind of thing that turns a transient network blip into a permanent
+        # half-published release. `gh release view` as a fallback makes this
+        # step idempotent on a re-run after a partial failure.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || gh release view "$GITHUB_REF_NAME"
 
   release-binaries:
     needs: publish-crate
@@ -54,9 +63,20 @@ jobs:
         run: tar -czf "asobi-${{ matrix.target }}.tar.gz" -C "target/${{ matrix.target }}/release" asobi
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            asobi-${{ matrix.target }}.tar.gz
+        # The macOS runner's connection to api.github.com is intermittently
+        # flaky (connect timeouts, not an auth or content problem) -- retry a
+        # few times with backoff rather than failing the whole release on a
+        # transient network blip. `--clobber` makes a retry after a partial
+        # upload safe to repeat.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh release upload "$GITHUB_REF_NAME" "asobi-${{ matrix.target }}.tar.gz" --clobber; then
+              exit 0
+            fi
+            echo "upload attempt $attempt failed; retrying in 15s..." >&2
+            sleep 15
+          done
+          echo "upload failed after 5 attempts" >&2
+          exit 1

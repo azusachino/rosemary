@@ -246,6 +246,10 @@ pub(crate) enum SkillsCommands {
         /// Install specific skills by name
         #[arg(long, num_args = 1..)]
         select: Option<Vec<String>>,
+        /// Only walk this subdirectory of the checkout (e.g. a source that
+        /// mirrors skills across several tool-specific directories)
+        #[arg(long)]
+        subdir: Option<std::path::PathBuf>,
     },
     /// Reconcile installed skills with the `[skills]` block in `asobi.toml`
     Sync,

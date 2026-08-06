@@ -38,6 +38,14 @@ pub struct SkillSource {
     /// Take only these skills, by name.
     #[serde(default)]
     pub select: Vec<String>,
+    /// Scope the install walk to this subdirectory of the checkout, relative
+    /// to its root. Some sources mirror every skill across several
+    /// tool-specific directories (`.opencode/`, `.kiro/`, a canonical
+    /// `skills/`, ...) with the same `name:` in each copy, which collides on
+    /// install; scoping to the one canonical directory avoids the mirrors
+    /// entirely instead of asking the install step to arbitrate between them.
+    #[serde(default)]
+    pub subdir: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -131,6 +139,26 @@ select = ["alpha", "beta"]
     }
 
     #[test]
+    fn subdir_defaults_to_none_and_parses_when_declared() {
+        let (_dir, cfg) = write_config(
+            r#"
+[[skills.source]]
+url = "https://github.com/a/one"
+all = true
+
+[[skills.source]]
+url = "https://github.com/b/two"
+select = ["alpha"]
+subdir = "skills"
+"#,
+        );
+
+        let skills = SkillsConfig::load(&cfg).unwrap().unwrap();
+        assert_eq!(skills.sources[0].subdir, None);
+        assert_eq!(skills.sources[1].subdir, Some(PathBuf::from("skills")));
+    }
+
+    #[test]
     fn no_skills_block_is_none_not_an_error() {
         let (_dir, cfg) = write_config("data_dir = \".asobi/data\"\n");
         assert!(SkillsConfig::load(&cfg).unwrap().is_none());
@@ -142,6 +170,7 @@ select = ["alpha", "beta"]
             url: "u".into(),
             all: true,
             select: vec!["a".into()],
+            subdir: None,
         };
         assert!(both.selection().is_err());
 
@@ -149,6 +178,7 @@ select = ["alpha", "beta"]
             url: "u".into(),
             all: false,
             select: vec![],
+            subdir: None,
         };
         assert!(neither.selection().is_err());
     }
