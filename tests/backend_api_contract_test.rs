@@ -369,3 +369,124 @@ fn restore_rejects_non_asobi_sqlite_and_removes_sidecars() {
     let error = invalid_store.restore(invalid_source, true).unwrap_err();
     assert!(error.to_string().contains("not an Asobi SQLite database"));
 }
+
+// storage-boundary: provider-test -- this test names the libSQL/Turso-era
+// schema on purpose, to verify the SQLite provider cleans up after it.
+#[test]
+fn opening_a_pre_v5_database_drops_superseded_tables_and_enables_incremental_vacuum() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("legacy.db");
+
+    // Reproduce a database that has existed since before the 0.6 rusqlite
+    // rewrite: the original `mcp_*` schema plus the libSQL/Turso-era
+    // `chunks`/`topics` vector schema, both superseded and left in place by
+    // every migration that came after them. `idx_chunks_vector` is the real
+    // regression case -- it is an expression index over `libsql_vector_idx`,
+    // a function only the libSQL fork registers. Ordinary `CREATE INDEX`
+    // evaluates the expression up front, so this rusqlite build (no
+    // `functions` feature, no libSQL) can't build that fixture the normal
+    // way; `writable_schema` plants the same catalog row libSQL would have
+    // written without evaluating it, matching what a real such database
+    // looks like to a plain-SQLite reader. The store's own connection below
+    // never registers that function either, so the migration must drop
+    // `chunks` before VACUUM ever has to rebuild the index.
+    {
+        let legacy = Connection::open(&db_path).unwrap();
+        legacy
+            .execute_batch(
+                "CREATE TABLE mcp_entities (name TEXT PRIMARY KEY);
+                 CREATE TABLE chunks (id INTEGER PRIMARY KEY, embedding BLOB);
+                 CREATE TABLE topics (id INTEGER PRIMARY KEY, title TEXT);
+                 CREATE TABLE sessions (id INTEGER PRIMARY KEY);
+                 INSERT INTO mcp_entities(name) VALUES ('leftover');
+                 PRAGMA user_version = 4;
+                 PRAGMA writable_schema = ON;
+                 INSERT INTO sqlite_master(type, name, tbl_name, rootpage, sql) VALUES (
+                     'index', 'idx_chunks_vector', 'chunks', 0,
+                     'CREATE INDEX idx_chunks_vector ON chunks(libsql_vector_idx(embedding, ''metric=cosine''))'
+                 );
+                 PRAGMA writable_schema = RESET;",
+            )
+            .unwrap();
+    }
+    let store = SqliteStore::open_at(&db_path).unwrap();
+    // The current-generation graph works normally post-migration.
+    store
+        .create_entities(vec![EntityInput {
+            name: "post-migration".into(),
+            entity_type: "concept".into(),
+            observations: vec![],
+        }])
+        .unwrap();
+    drop(store);
+
+    let conn = Connection::open(&db_path).unwrap();
+    let table_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table'
+             AND name IN ('mcp_entities', 'chunks', 'topics', 'sessions')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(table_count, 0, "superseded tables should be dropped");
+    let user_version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(user_version, 5);
+    let auto_vacuum: i64 = conn
+        .query_row("PRAGMA auto_vacuum", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        auto_vacuum, 2,
+        "database should switch to incremental auto-vacuum"
+    );
+
+    // Re-opening an already-migrated database is a no-op: no error, and the
+    // migration path does not run again.
+    let reopened = SqliteStore::open_at(&db_path).unwrap();
+    assert_eq!(reopened.stats().unwrap().entities, 1);
+}
+
+#[test]
+fn applied_purge_reclaims_space_via_incremental_vacuum() {
+    let (dir, store) = store();
+    store
+        .create_entities(vec![EntityInput {
+            name: "project:task".into(),
+            entity_type: "task".into(),
+            observations: vec!["done".into()],
+        }])
+        .unwrap();
+    store
+        .truth_upsert("project:task", "status", "DONE")
+        .unwrap();
+
+    let db = dir.path().join("contract.db");
+    let conn = Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "UPDATE asobi_entities SET created_at = datetime('now', '-90 days');
+         UPDATE asobi_observations SET created_at = datetime('now', '-90 days');
+         UPDATE asobi_truths SET updated_at = datetime('now', '-90 days');",
+    )
+    .unwrap();
+    drop(conn);
+
+    let report = store
+        .purge(PurgeRequest {
+            entity_types: vec!["task".into()],
+            statuses: vec!["DONE".into()],
+            older_than_days: 30,
+            apply: true,
+        })
+        .unwrap();
+    assert_eq!(report.deleted, 1);
+
+    // `incremental_vacuum` after an applied purge must not error even
+    // though this store was opened fresh (auto_vacuum already INCREMENTAL).
+    let conn = Connection::open(&db).unwrap();
+    let auto_vacuum: i64 = conn
+        .query_row("PRAGMA auto_vacuum", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(auto_vacuum, 2);
+}

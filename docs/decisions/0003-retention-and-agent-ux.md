@@ -68,7 +68,9 @@ The 0.6.1 implementation purges clearly terminal entities transactionally. It do
 
 ### Compaction and physical storage
 
-`compact` remains a projection operation: it syncs durable knowledge to Markdown and prunes old session files. It is not a hidden database purge. Deleting rows reduces logical graph content and FTS entries, but SQLite may not immediately shrink the database file; backup/VACUUM maintenance is a separate concern.
+`compact` is a projection operation: it syncs durable knowledge to Markdown. It is not a hidden database purge. Deleting rows reduces logical graph content and FTS entries; whether that also shrinks the database file was left as "a separate concern" in the original 0.6.1 version of this ADR.
+
+That concern turned out to be load-bearing: a database created before schema v5 accumulates every superseded generation's tables in place (the 0.1 `mcp_*` schema, then the libSQL/Turso-era `chunks`/`topics` vector schema), since each rewrite only ever added its own tables and never dropped the ones it replaced. Combined with SQLite's default `auto_vacuum=NONE` — where a `DELETE` marks pages free but never returns them to the OS — a long-lived database can be over 95% dead pages, so `purge --apply` was shrinking the graph correctly while the `.db` file on disk never got smaller. Schema v5 (0.6.4) drops those superseded tables once on upgrade, switches every database to `auto_vacuum=INCREMENTAL` (via a one-time `VACUUM` for a pre-existing database, or the pragma alone for a fresh one), and `purge --apply` now runs a bounded `PRAGMA incremental_vacuum` afterward so routine purges keep reclaiming space instead of only marking it free. An unbounded full `VACUUM` remains a manual, `backup`-adjacent step for anyone who wants to fully repack the file in one shot.
 
 ### Shell completion
 

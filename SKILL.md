@@ -206,20 +206,17 @@ Idempotent in both modes. Run `asobi init` once on a new machine; run `asobi ini
 ### Maintenance
 
 ```
-asobi compact [--older-than <DAYS>]
+asobi compact
 ```
 
-Three-step maintenance sweep:
-
-1. Prunes session Markdown files in `.asobi/topics/sessions/` older than `DAYS` (default: 90).
-2. Syncs **durable knowledge** entities (`project`, `concept`, `reference`, `preference`, `standard`) back to a Markdown file in `.asobi/topics/` — including their truths. Volatile state (`session`, `task`/epic) and self-indexing `skill` entities are skipped: they stay graph-only (read them with `search` / `show`), and `export` / `backup` cover full archival.
+Syncs **durable knowledge** entities (`project`, `concept`, `reference`, `preference`, `standard`) back to a Markdown file in `.asobi/topics/` — including their truths. Volatile state (`session`, `task`/epic) and self-indexing `skill` entities are skipped: they stay graph-only (read them with `search` / `show`), and `export` / `backup` cover full archival.
 
 ```bash
 asobi purge [--dry-run]
 asobi purge --type task --status DONE --older-than 90 --apply
 ```
 
-`purge` is dry-run by default and accepts only `session` plus terminal `task` statuses (`DONE`, `CLOSED`, or `ABANDONED`). It never accepts durable knowledge or skills. Review the candidate report before adding `--apply`; it does not run implicitly during `graph`, `search`, `compact`, or startup.
+`purge` is dry-run by default and accepts only `session` plus terminal `task` statuses (`DONE`, `CLOSED`, or `ABANDONED`). It never accepts durable knowledge or skills. Review the candidate report before adding `--apply`; it does not run implicitly during `graph`, `search`, `compact`, or startup. An applied purge also reclaims the freed pages (`PRAGMA incremental_vacuum`), so the database file shrinks along with the graph instead of only shrinking logically.
 
 ### Shell completion
 
@@ -399,7 +396,6 @@ asobi truth "<project>:session" "status" "IN_PROGRESS"
     <slug>/
   topics/              # Markdown snapshots synced by `compact`
     <slug>.md
-    sessions/          # Session files pruned by compact --older-than
 
 .agents/skills/        # Skills written by `skills sync` (path is configurable)
   <slug>@<name>/

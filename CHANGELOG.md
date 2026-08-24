@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.6.4 — Physical storage reclamation
+
+### Fixed
+
+- A database that has existed since before the 0.6 rusqlite rewrite carries every superseded schema generation's tables in place — the original `mcp_*` schema, then the libSQL/Turso-era `chunks`/`topics` vector schema — because each rewrite only ever added its own tables and never dropped the ones it replaced. Combined with SQLite's default `auto_vacuum=NONE`, a long-lived database could be over 95% dead pages that no command ever targeted. Schema v5 drops those tables on upgrade and switches every database to `auto_vacuum=INCREMENTAL` (a one-time `VACUUM` for an upgrading database, the pragma alone for a fresh one); `purge --apply` now runs a bounded `PRAGMA incremental_vacuum` afterward so routine purges keep reclaiming space instead of only marking it free. See ADR 0003 for the full account, including why this was previously deferred.
+- `PRAGMA auto_vacuum` only takes effect before a database's file header is first written, which `PRAGMA journal_mode=WAL` does as a side effect. `open_at` was setting `auto_vacuum` after switching to WAL, so it silently never took effect on a fresh database; the pragma now runs first.
+- `compact --older-than` claimed to prune session Markdown files, but nothing has written to `.asobi/topics/sessions/` since sessions were excluded from the Markdown projection — the flag was dead code from before that exclusion. Removed; `compact` is sync-only now.
+
+### Tooling
+
+- Toolchain pins bumped: Rust 1.98.0, uv 0.12.5, bun 1.4.0, ruff 0.16.4; `criterion` to 0.8. Rust 1.98's clippy adds `chunks_exact_to_as_chunks`, which `new`/`link`'s pair/triple parsing now satisfies via `as_chunks`.
+
+### Verification
+
+Added `opening_a_pre_v5_database_drops_superseded_tables_and_enables_incremental_vacuum` and `applied_purge_reclaims_space_via_incremental_vacuum` to the backend contract suite; both caught the WAL-ordering bug above before it shipped. The physical shrink itself (60MB → 1.2MB, 96% of pages reclaimed) was verified against a real long-lived database copy, not just the synthetic fixture. `make check` passes: storage boundary, rustfmt, Prettier, Ruff, Clippy `-D warnings`, all Rust tests, CLI verifier, use cases, and benchmark compilation.
+
 ## v0.6.3 — Self-contained skills and reliable releases
 
 ### Added

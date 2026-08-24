@@ -20,7 +20,9 @@ pub(crate) fn run(backend: &crate::storage::Storage, command: Commands, json: bo
                 );
             }
             let entities: Vec<crate::model::EntityInput> = pairs
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|c| crate::model::EntityInput {
                     name: c[0].clone(),
                     entity_type: c[1].clone(),
@@ -42,7 +44,9 @@ pub(crate) fn run(backend: &crate::storage::Storage, command: Commands, json: bo
                 );
             }
             let relations: Vec<crate::model::RelationInput> = triples
-                .chunks_exact(3)
+                .as_chunks::<3>()
+                .0
+                .iter()
                 .map(|c| crate::model::RelationInput {
                     from: c[0].clone(),
                     to: c[1].clone(),

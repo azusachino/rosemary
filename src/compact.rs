@@ -4,8 +4,6 @@ use crate::normalize::slugify;
 use anyhow::Result;
 use std::fmt::Write as _;
 use std::io::Write as _;
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
 
 pub fn sync_graph_to_markdown(graph_store: &impl GraphStore) -> Result<usize> {
     let paths = crate::paths::AsobiPaths::resolve();
@@ -204,55 +202,9 @@ fn render_entity_markdown(
     out
 }
 
-pub fn prune_old_sessions(topics_root: &str, days: u32) -> Result<usize> {
-    let sessions_dir = PathBuf::from(topics_root).join("sessions");
-    if !sessions_dir.exists() {
-        return Ok(0);
-    }
-
-    let cutoff = SystemTime::now() - Duration::from_secs(days as u64 * 86400);
-    let mut pruned = 0;
-
-    for entry in std::fs::read_dir(&sessions_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let meta = entry.metadata()?;
-        if meta.modified()? < cutoff {
-            std::fs::remove_file(path)?;
-            pruned += 1;
-        }
-    }
-    Ok(pruned)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_prune_removes_old_session_files() {
-        let dir = tempdir().unwrap();
-        let sessions_dir = dir.path().join("sessions");
-        std::fs::create_dir_all(&sessions_dir).unwrap();
-
-        // Create a file with old mtime
-        let old_path = sessions_dir.join("2020-01-01-0000.md");
-        std::fs::File::create(&old_path)
-            .unwrap()
-            .write_all(b"old")
-            .unwrap();
-
-        // Set mtime to 2020-01-01
-        let old_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1577836800);
-        filetime::set_file_mtime(&old_path, filetime::FileTime::from_system_time(old_time))
-            .unwrap();
-
-        let count = prune_old_sessions(dir.path().to_str().unwrap(), 90).unwrap();
-        assert_eq!(count, 1);
-        assert!(!old_path.exists());
-    }
 
     #[test]
     fn test_should_sync_skips_volatile_and_skill_types() {

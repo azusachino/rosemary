@@ -139,7 +139,7 @@ asobi purge --type task --status DONE --older-than 90
 asobi purge --type task --status DONE --older-than 90 --apply
 ```
 
-Purge is restricted to `session` and `task` entities. Durable knowledge and installed skills are never accepted by this command. Use `--json` for a machine-readable candidate report, and review the dry-run output before adding `--apply` to a scheduled job.
+Purge is restricted to `session` and `task` entities. Durable knowledge and installed skills are never accepted by this command. Use `--json` for a machine-readable candidate report, and review the dry-run output before adding `--apply` to a scheduled job. An applied purge also runs `PRAGMA incremental_vacuum` to return the freed pages to the OS, so the database file shrinks along with the graph rather than only growing a free list.
 
 `compact` syncs only durable _knowledge_ entities (project, decisions, references, preferences) to Markdown. Volatile state (`session`, `task`) and self-indexing `skill` entities stay graph-only — query them with `search` / `show`, and use `export` / `backup` for full archival.
 
