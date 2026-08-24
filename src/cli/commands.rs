@@ -105,12 +105,8 @@ pub(crate) enum Commands {
         #[arg(long)]
         with_ids: bool,
     },
-    /// Prune old sessions and sync the graph to Markdown topics
-    Compact {
-        /// Prune sessions older than N days
-        #[arg(long, default_value = "90")]
-        older_than: u32,
-    },
+    /// Sync durable knowledge entities to Markdown topics
+    Compact {},
     /// Preview or delete stale terminal sessions and tasks
     Purge {
         /// Operational entity type to inspect (repeatable)

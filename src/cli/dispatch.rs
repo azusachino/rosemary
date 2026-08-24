@@ -45,12 +45,7 @@ pub(crate) fn run_cli(cli: Cli) -> Result<()> {
 
     let json = cli.json;
     match cli.command {
-        Commands::Compact { older_than } => {
-            let pruned = crate::compact::prune_old_sessions(
-                &paths.topics_dir.to_string_lossy(),
-                older_than,
-            )?;
-            info!("Pruned {} old session files.", pruned);
+        Commands::Compact {} => {
             let synced = crate::compact::sync_graph_to_markdown(backend)?;
             info!("Done. Synced {} entities to Markdown.", synced);
         }

@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 const DEFAULT_DATABASE_FILENAME: &str = "asobi.db";
 const DEFAULT_BUSY_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_OBSERVATION_LIMIT: usize = 200;
@@ -153,18 +153,31 @@ impl SqliteStore {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(DEFAULT_BUSY_TIMEOUT_MS),
         ))?;
+        let previous_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if previous_version == 0 {
+            // `auto_vacuum` only takes effect before the database file's
+            // header is first written, which `journal_mode=WAL` below does
+            // as a side effect -- so this must run first, or the pragma
+            // silently no-ops and the database is stuck at auto_vacuum=NONE
+            // forever. A pre-existing database is switched over in
+            // `upgrade_to_v5` instead, which pays for it with the one-time
+            // VACUUM that changing this pragma later requires.
+            conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
+        }
         conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
         )?;
-        Self::init_schema(&conn)?;
+        Self::init_schema(&conn, previous_version)?;
         Ok(Self {
             conn: Mutex::new(conn),
             db_path: path.to_path_buf(),
         })
     }
 
-    fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
-        let previous_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    fn init_schema(conn: &Connection, previous_version: i64) -> rusqlite::Result<()> {
+        if previous_version > 0 && previous_version < SCHEMA_VERSION {
+            Self::upgrade_to_v5(conn)?;
+        }
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS asobi_entities (
                 name TEXT PRIMARY KEY,
@@ -224,7 +237,7 @@ impl SqliteStore {
                 INSERT INTO asobi_obs_fts(asobi_obs_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
                 INSERT INTO asobi_obs_fts(rowid, content) VALUES (new.rowid, new.content);
             END;
-            PRAGMA user_version = 4;",
+            PRAGMA user_version = 5;",
         )?;
         let count: i64 =
             conn.query_row("SELECT count(*) FROM asobi_observations", [], |r| r.get(0))?;
@@ -234,6 +247,43 @@ impl SqliteStore {
                 [],
             );
         }
+        Ok(())
+    }
+
+    /// Every asobi generation before the 0.6 rusqlite rewrite (`mcp_*`
+    /// tables from the original MCP-memory schema, then `chunks`/`topics`
+    /// from the libSQL/Turso hybrid vector search era) left its tables in
+    /// place when superseded rather than dropping them, since the old
+    /// migration path only ever added the next generation's tables. On a
+    /// database that has been open continuously since before this fix,
+    /// those tables are pure dead weight — observed as high as 96% of
+    /// on-disk pages on a long-lived real database, and permanent, since
+    /// SQLite never shrinks a file after a DELETE without an explicit
+    /// VACUUM (see ADR 0003, "Compaction and physical storage").
+    ///
+    /// `chunks` carries a `libsql_vector_idx(...)` expression index that
+    /// only the libSQL fork's SQLite build can resolve; this rusqlite build
+    /// cannot, so the table (and with it, that index) must be dropped
+    /// before VACUUM rewrites the file, or VACUUM itself fails trying to
+    /// rebuild it. Dropping a table also drops its own indexes and
+    /// triggers, so no companion DROP INDEX/TRIGGER statements are needed.
+    fn upgrade_to_v5(conn: &Connection) -> rusqlite::Result<()> {
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS mcp_obs_fts;
+             DROP TABLE IF EXISTS mcp_skills;
+             DROP TABLE IF EXISTS mcp_truths;
+             DROP TABLE IF EXISTS mcp_relations;
+             DROP TABLE IF EXISTS mcp_observations;
+             DROP TABLE IF EXISTS mcp_entities;
+             DROP TABLE IF EXISTS chunks;
+             DROP TABLE IF EXISTS idx_chunks_vector_shadow;
+             DROP TABLE IF EXISTS libsql_vector_meta_shadow;
+             DROP TABLE IF EXISTS topics_fts;
+             DROP TABLE IF EXISTS topics;
+             DROP TABLE IF EXISTS sessions;",
+        )?;
+        conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
+        conn.execute_batch("VACUUM;")?;
         Ok(())
     }
 
@@ -887,7 +937,7 @@ impl MaintenanceStore for SqliteStore {
     }
     fn purge(&self, request: PurgeRequest) -> ApiResult<PurgeReport> {
         validate_purge_request(&request)?;
-        self.write(|tx| {
+        let report = self.write(|tx| {
             let candidates = collect_purge_candidates(tx, &request)?;
             let deleted = if request.apply {
                 for candidate in &candidates {
@@ -906,10 +956,23 @@ impl MaintenanceStore for SqliteStore {
                 candidates,
                 deleted,
             })
-        })
+        })?;
+        if report.deleted > 0 {
+            // A no-op unless this database is in incremental auto-vacuum
+            // mode, which every database is as of schema v5 -- see
+            // `upgrade_to_v5`. Bounded to a few thousand pages so a large
+            // backlog reclaims gradually across purges instead of stalling
+            // this one; VACUUM (unbounded, exclusive-locking) stays a
+            // manual `backup`-adjacent maintenance step, not something a
+            // routine purge should pay for.
+            self.read(|conn| conn.execute_batch("PRAGMA incremental_vacuum(2000);"))?;
+        }
+        Ok(report)
     }
     fn reset(&self) -> ApiResult<()> {
-        self.write(|tx| { tx.execute_batch("DELETE FROM asobi_relations; DELETE FROM asobi_truth_history; DELETE FROM asobi_truths; DELETE FROM asobi_observations; DELETE FROM asobi_skills; DELETE FROM asobi_entities;")?; Ok(()) })
+        self.write(|tx| { tx.execute_batch("DELETE FROM asobi_relations; DELETE FROM asobi_truth_history; DELETE FROM asobi_truths; DELETE FROM asobi_observations; DELETE FROM asobi_skills; DELETE FROM asobi_entities;")?; Ok(()) })?;
+        self.read(|conn| conn.execute_batch("PRAGMA incremental_vacuum;"))?;
+        Ok(())
     }
     fn capabilities(&self) -> ApiResult<BackendCapabilities> {
         Ok(BackendCapabilities {

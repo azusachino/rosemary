@@ -1,6 +1,6 @@
 [package]
 name = "asobi"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 authors = ["haru <azusachino@proton.me>"]
 description = "A persistent, project-local knowledge graph CLI for AI agents."
@@ -52,9 +52,8 @@ rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 dhat = "0.3"
-filetime = "0.2"
 tempfile = "3"
 
 [[bench]]
